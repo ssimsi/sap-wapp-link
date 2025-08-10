@@ -1,0 +1,14 @@
+
+🧾 FACTURA ELECTRÓNICA
+━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Número: 15334
+📅 Fecha: 2025-08-06
+👤 Cliente: L.A  S.A
+
+💰 Total: $606790.8
+💱 Moneda: ARS
+
+━━━━━━━━━━━━━━━━━━━━━━
+ATIVY
+📧 Consultas: info@tuempresa.com
