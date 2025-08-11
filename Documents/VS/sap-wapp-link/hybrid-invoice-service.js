@@ -367,19 +367,21 @@ class HybridInvoiceService {
     
     // Determine message type based on detected Series
     if (isSeries76) {
-      lines.push('📄 *NUEVO DOCUMENTO*');
+      lines.push('📄 *NUEVO DOCUMENTO EMITIDO*');
+      lines.push('');
+      lines.push(`📋 Comprobante: *${invoice.DocNum}*`);
       console.log(`📄 Series 76 message generated for invoice ${docNum}`);
     } else {
-      lines.push('🧾 *NUEVA FACTURA ELECTRÓNICA*');
+      lines.push('🧾 *NUEVA FACTURA EMITIDA*');
+      lines.push(`📋 Factura: *${invoice.DocNum}*`);
       console.log(`🧾 Series 4 message generated for invoice ${docNum}`);
     }
     
-    lines.push(`📋 Factura: *${invoice.DocNum}*`);
     lines.push(`👤 Cliente: ${invoice.CardName}`);
     lines.push(`💰 Total: $${invoice.DocTotal?.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}`);
     lines.push(`📅 Fecha: ${invoice.DocDate}`);
     
-    if (invoice.Comments) {
+    if (invoice.Comments && !isSeries76) {
       lines.push(`📝 Comentarios: ${invoice.Comments}`);
     }
     
@@ -393,7 +395,7 @@ class HybridInvoiceService {
       lines.push('');
     }
     
-    lines.push('Gracias por tu compra! 🙏');
+    lines.push('Gracias por tu compra!');
     
     return lines.join('\n');
   }
@@ -425,7 +427,7 @@ class HybridInvoiceService {
       console.log(`📄 Series 76 salesperson message generated for ${salespersonName}`);
     } else {
       // Series 4 - Salesperson message
-      lines.push('🧾 *NUEVA FACTURA ELECTRÓNICA*');
+      lines.push('🧾 *NUEVA FACTURA EMITIDA*');
       lines.push('');
       lines.push(`Hola ${salespersonName},`);
       lines.push('');

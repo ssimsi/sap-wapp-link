@@ -63,7 +63,7 @@ class EmailReporter {
         <div style="margin-top: 30px; padding: 15px; background-color: #e3f2fd; border-radius: 5px;">
           <h4 style="color: #1976d2;">🔧 Acciones Recomendadas:</h4>
           <ul>
-            <li>Verificar que los emails con PDFs están llegando a <strong>sarandishk@gmail.com</strong></li>
+            <li>Verificar que los emails con PDFs están llegando a <strong>shksapwapp@gmail.com</strong></li>
             <li>Confirmar que el DocNum aparece en el asunto del email</li>
             <li>Revisar la conexión del servicio de WhatsApp</li>
             <li>Verificar números de teléfono de clientes en SAP</li>
@@ -95,7 +95,7 @@ ${index + 1}. Factura ${missed.invoice.DocNum}
 `).join('')}
 
 ACCIONES RECOMENDADAS:
-- Verificar que los emails con PDFs están llegando a sarandishk@gmail.com
+- Verificar que los emails con PDFs están llegando a shksapwapp@gmail.com
 - Confirmar que el DocNum aparece en el asunto del email
 - Revisar la conexión del servicio de WhatsApp
 - Verificar números de teléfono de clientes en SAP
