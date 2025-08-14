@@ -5,7 +5,8 @@
   "main": "whatsapp-service.js",
   "type": "module",
   "scripts": {
-    "start": "node whatsapp-service.js",
+    "start": "node hybrid-invoice-service.js",
+    "start-hybrid": "node hybrid-invoice-service.js",
     "dev": "node --watch whatsapp-service.js",
     "test": "node test-sap-connection.js",
     "setup": "node setup-sap-fields.js",
@@ -21,8 +22,6 @@
     "start-email": "node integrated-invoice-service.js",
     "email-dev": "node --watch integrated-invoice-service.js",
     "setup-email": "node setup-email-monitoring.js",
-    "start-hybrid": "node hybrid-invoice-service.js",
-    "test-hybrid": "node test-hybrid-service.js",
     "hybrid-dev": "node --watch hybrid-invoice-service.js",
     "check-test-mode": "node check-test-mode.js",
     "test-pdf-attachment": "node test-pdf-attachment.js"

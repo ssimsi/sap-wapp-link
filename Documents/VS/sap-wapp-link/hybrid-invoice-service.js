@@ -129,7 +129,7 @@ class HybridInvoiceService {
     try {
       // Get invoices that haven't been sent via WhatsApp yet
       const invoicesResponse = await this.sapConnection.makeRequest(
-        `/b1s/v1/Invoices?$filter=DocDate ge '${fromDate}' and (U_WhatsAppSent eq null or U_WhatsAppSent eq 'N')&$orderby=DocEntry desc&$top=50`
+        `/b1s/v1/Invoices?$filter=DocDate ge '${fromDate}' and (U_WhatsAppSent eq null or U_WhatsAppSent eq 'N')&$orderby=DocEntry desc&$top=50&$select=DocEntry,DocNum,CardCode,CardName,DocTotal,DocDate,Series,SalesPersonCode,U_WhatsAppSent,U_WhatsAppDate,U_WhatsAppPhone,Comments`
       );
       
       return invoicesResponse.value || [];
@@ -184,7 +184,10 @@ class HybridInvoiceService {
       // 5. Mark as sent in SAP
       await this.markInvoiceAsSent(invoice.DocEntry);
       
-      // 6. Clean up temp PDF
+      // 6. Send salesperson notification
+      await this.sendSalespersonNotification(invoice);
+      
+      // 7. Clean up temp PDF
       if (fs.existsSync(pdfPath)) {
         fs.unlinkSync(pdfPath);
       }
@@ -352,6 +355,42 @@ class HybridInvoiceService {
     });
   }
 
+  async sendSalespersonNotification(invoice) {
+    try {
+      // Get salesperson code from invoice (assuming it's in SalesPersonCode field)
+      if (!invoice.SalesPersonCode) {
+        console.log(`   ⚠️ No salesperson code found for invoice ${invoice.DocNum}`);
+        return;
+      }
+
+      // Get salesperson phone from environment variables
+      const salesPersonPhone = process.env[`SALES_PERSON_${invoice.SalesPersonCode}`];
+      if (!salesPersonPhone) {
+        console.log(`   ⚠️ No phone configured for salesperson ${invoice.SalesPersonCode}`);
+        return;
+      }
+
+      // Get friendly name from environment variables
+      const friendlyName = process.env[`SALES_PERSON_NAME_${invoice.SalesPersonCode}`];
+      const salesPersonName = friendlyName || `Código ${invoice.SalesPersonCode}`;
+
+      console.log(`   👨‍💼 Sending notification to salesperson: ${salesPersonName} (${salesPersonPhone})`);
+
+      // Generate salesperson message with delivery status
+      const salespersonMessage = await this.generateSalespersonMessage(invoice, salesPersonName);
+
+      // Send to salesperson (in test mode, this also goes to test phone)
+      const phoneToUse = process.env.TEST_MODE === 'true' ? process.env.TEST_PHONE : salesPersonPhone;
+      
+      await this.whatsappService.sendMessage(phoneToUse, salespersonMessage);
+      
+      console.log(`   ✅ Salesperson notification sent to ${salesPersonName}`);
+
+    } catch (error) {
+      console.error(`   ❌ Error sending salesperson notification: ${error.message}`);
+    }
+  }
+
   generateWhatsAppMessage(invoice) {
     const lines = [];
     
@@ -400,7 +439,7 @@ class HybridInvoiceService {
     return lines.join('\n');
   }
 
-  generateSalespersonMessage(invoice, salespersonName) {
+  async generateSalespersonMessage(invoice, salespersonName) {
     const lines = [];
     
     // Add test mode header if active
@@ -439,6 +478,39 @@ class HybridInvoiceService {
       console.log(`🧾 Series 4 salesperson message generated for ${salespersonName}`);
     }
     
+    // Get customer details to check email and phone status
+    let deliveryStatus = '';
+    try {
+      console.log(`   📋 Fetching customer details for ${invoice.CardCode}...`);
+      const customerResponse = await this.sapConnection.makeRequest(
+        `/b1s/v1/BusinessPartners('${invoice.CardCode}')?$select=CardCode,CardName,EmailAddress,Cellular,Phone1`
+      );
+      
+      const customer = customerResponse;
+      const hasEmail = customer.EmailAddress && customer.EmailAddress.trim() !== '';
+      const hasCellular = customer.Cellular && customer.Cellular.trim() !== '';
+      
+      console.log(`   📧 Email: ${hasEmail ? customer.EmailAddress : 'None'}`);
+      console.log(`   📱 Cellular: ${hasCellular ? customer.Cellular : 'None'}`);
+      
+      // Determine delivery status based on available contact methods
+      if (hasEmail && hasCellular) {
+        deliveryStatus = `Este documento fue enviado al cliente al mail ${customer.EmailAddress}, y al numero ${customer.Cellular}`;
+      } else if (hasEmail && !hasCellular) {
+        deliveryStatus = `Este documento se envio al mail ${customer.EmailAddress}. El cliente no registra numero de celular`;
+      } else if (!hasEmail && hasCellular) {
+        deliveryStatus = `Este documento se envio al numero ${customer.Cellular}. El cliente no registra casilla de mail`;
+      } else {
+        deliveryStatus = `El cliente no registra mail ni numero de celular en su ficha. Por favor reenviar`;
+      }
+      
+    } catch (error) {
+      console.error(`   ❌ Error fetching customer details: ${error.message}`);
+      deliveryStatus = `No se pudo verificar los datos de contacto del cliente. Por favor revisar manualmente`;
+    }
+    
+    lines.push('');
+    lines.push(`📞 **Estado de entrega:** ${deliveryStatus}`);
     lines.push('');
     lines.push('Si tiene alguna consulta, no dude en contactarnos.');
     lines.push('');
