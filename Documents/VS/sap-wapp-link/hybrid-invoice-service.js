@@ -37,7 +37,21 @@ class HybridInvoiceService {
       console.log('');
     } else {
       console.log('');
-      console.log('🚨 PRODUCTION MODE - Messages will go to real customers!');
+      console.log('🚨 PRODUCTION MODE - Messages enabled!');
+      
+      // Show customer message safety status
+      if (process.env.DISABLE_CUSTOMER_MESSAGES === 'true') {
+        console.log('');
+        console.log('🔒 ⚠️  CUSTOMER MESSAGES DISABLED ⚠️  🔒');
+        console.log('=========================================');
+        console.log('📵 Customer notifications: DISABLED');
+        console.log('👨‍💼 Salesperson notifications: ENABLED');
+        console.log('🛡️ Extra safety mode active');
+        console.log('=========================================');
+      } else {
+        console.log('📱 Customer notifications: ENABLED');
+        console.log('👨‍💼 Salesperson notifications: ENABLED');
+      }
       console.log('');
     }
     
@@ -171,12 +185,39 @@ class HybridInvoiceService {
       console.log(`⚠️ No phone number for invoice ${invoice.DocNum} - using admin phone`);
     }
     
-    // 4. Send via WhatsApp - ALWAYS use test phone in test mode
-    const phoneToUse = process.env.TEST_MODE === 'true' ? 
-      process.env.TEST_PHONE : 
-      (customerPhone || process.env.ADMIN_PHONE);
+    // 4. Determine phone to use with safety checks
+    let phoneToUse;
+    let messageTarget;
     
-    console.log(`📱 Sending to: ${phoneToUse} ${process.env.TEST_MODE === 'true' ? '(TEST MODE)' : ''}`);
+    // SAFETY CHECK: If customer messages are disabled, skip customer and only notify salesperson
+    if (process.env.DISABLE_CUSTOMER_MESSAGES === 'true') {
+      console.log(`🔒 CUSTOMER MESSAGES DISABLED - Skipping customer notification for invoice ${invoice.DocNum}`);
+      console.log(`   📋 Customer would have been: ${customerPhone || 'No phone available'}`);
+      
+      // Skip customer message completely, only send salesperson notification
+      await this.markInvoiceAsSent(invoice.DocEntry);
+      await this.sendSalespersonNotification(invoice);
+      
+      // Clean up temp PDF
+      if (fs.existsSync(pdfPath)) {
+        fs.unlinkSync(pdfPath);
+      }
+      
+      console.log(`✅ Invoice ${invoice.DocNum} marked as sent (customer message disabled, salesperson notified)`);
+      this.processedInvoices.add(invoice.DocNum);
+      return;
+    }
+    
+    // Normal logic: Send to customer
+    if (process.env.TEST_MODE === 'true') {
+      phoneToUse = process.env.TEST_PHONE;
+      messageTarget = 'TEST MODE';
+    } else {
+      phoneToUse = customerPhone || process.env.ADMIN_PHONE;
+      messageTarget = customerPhone ? 'Customer' : 'Admin (no customer phone)';
+    }
+    
+    console.log(`📱 Sending to ${messageTarget}: ${phoneToUse}`);
     
     try {
       await this.whatsappService.sendMessage(phoneToUse, whatsappMessage, pdfPath);
