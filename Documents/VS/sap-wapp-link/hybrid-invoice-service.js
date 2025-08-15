@@ -1,4 +1,4 @@
-import WhatsAppService from './whatsapp-service.js';
+import SimpleWhatsAppService from './simple-whatsapp-service.js';
 import EmailInvoiceMonitor from './email-invoice-monitor.js';
 import EmailReporter from './email-reporter.js';
 import PDFCleanupService from './pdf-cleanup-service.js';
@@ -12,7 +12,7 @@ dotenv.config({ path: '.env.local' });
 
 class HybridInvoiceService {
   constructor() {
-    this.whatsappService = new WhatsAppService();
+    this.whatsappService = new SimpleWhatsAppService();
     this.emailMonitor = new EmailInvoiceMonitor();
     this.emailReporter = new EmailReporter();
     this.pdfCleanupService = new PDFCleanupService();
@@ -148,9 +148,16 @@ class HybridInvoiceService {
     
     try {
       // Get invoices that haven't been sent via WhatsApp yet
-      const invoicesResponse = await this.sapConnection.makeRequest(
-        `/b1s/v1/Invoices?$filter=DocDate ge '${fromDate}' and (U_WhatsAppSent eq null or U_WhatsAppSent eq 'N')&$orderby=DocEntry desc&$top=50&$select=DocEntry,DocNum,CardCode,CardName,DocTotal,DocDate,Series,SalesPersonCode,U_WhatsAppSent,U_WhatsAppDate,U_WhatsAppPhone,Comments`
-      );
+      // Properly encode the OData query to avoid unescaped characters
+      const filter = `DocDate ge '${fromDate}' and (U_WhatsAppSent eq null or U_WhatsAppSent eq 'N')`;
+      const orderby = 'DocEntry desc';
+      const select = 'DocEntry,DocNum,CardCode,CardName,DocTotal,DocDate,Series,SalesPersonCode,U_WhatsAppSent,U_WhatsAppDate,U_WhatsAppPhone,Comments';
+      
+      const query = `/b1s/v1/Invoices?${encodeURI(`$filter=${filter}&$orderby=${orderby}&$top=50&$select=${select}`)}`;
+      
+      console.log('🔍 SAP Query:', query);
+      
+      const invoicesResponse = await this.sapConnection.makeRequest(query);
       
       return invoicesResponse.value || [];
       

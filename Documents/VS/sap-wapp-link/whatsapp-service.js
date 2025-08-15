@@ -803,25 +803,29 @@ Simsiroglu
   }
 }
 
-// Initialize and start the service
-const service = new WhatsAppInvoiceService();
+// Export the class for use in other modules
+export default WhatsAppInvoiceService;
 
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down WhatsApp Invoice Service...');
-  
-  if (service.client) {
-    await service.client.destroy();
-  }
-  
-  console.log('✅ Service stopped gracefully');
-  process.exit(0);
-});
+// If this file is run directly, create an instance and start it
+if (import.meta.url === `file://${process.argv[1]}`) {
+  // Initialize and start the service
+  const service = new WhatsAppInvoiceService();
 
-// Start the service
-service.start().catch(error => {
-  console.error('💥 Fatal error:', error.message);
-  process.exit(1);
-});
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('\n🛑 Shutting down WhatsApp Invoice Service...');
+    
+    if (service.client) {
+      await service.client.destroy();
+    }
+    
+    console.log('✅ Service stopped gracefully');
+    process.exit(0);
+  });
 
-export default service;
+  // Start the service
+  service.start().catch(error => {
+    console.error('💥 Fatal error:', error.message);
+    process.exit(1);
+  });
+}

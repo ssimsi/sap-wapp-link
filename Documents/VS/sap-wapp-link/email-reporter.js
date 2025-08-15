@@ -5,7 +5,7 @@ dotenv.config({ path: '.env.local' });
 
 class EmailReporter {
   constructor() {
-    this.transporter = nodemailer.createTransporter({
+    this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
       secure: false,
