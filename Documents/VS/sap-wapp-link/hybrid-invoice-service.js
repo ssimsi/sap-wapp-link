@@ -1,6 +1,7 @@
 import WhatsAppService from './whatsapp-service.js';
 import EmailInvoiceMonitor from './email-invoice-monitor.js';
 import EmailReporter from './email-reporter.js';
+import PDFCleanupService from './pdf-cleanup-service.js';
 import https from 'https';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -14,6 +15,7 @@ class HybridInvoiceService {
     this.whatsappService = new WhatsAppService();
     this.emailMonitor = new EmailInvoiceMonitor();
     this.emailReporter = new EmailReporter();
+    this.pdfCleanupService = new PDFCleanupService();
     this.sapConnection = new SAPConnection();
     this.isRunning = false;
     this.processedInvoices = new Set();
@@ -88,6 +90,10 @@ class HybridInvoiceService {
       cron.schedule('0 18 * * *', () => {
         this.sendDailyReport().catch(console.error);
       });
+      
+      // Start PDF cleanup service (runs daily at 5 AM)
+      console.log('\n🧹 Starting PDF cleanup service...');
+      this.pdfCleanupService.start();
       
       // Process immediately on start
       setTimeout(() => {
@@ -652,6 +658,11 @@ class HybridInvoiceService {
       if (this.whatsappService) {
         await this.whatsappService.stop();
         console.log('📱 WhatsApp service stopped');
+      }
+      
+      if (this.pdfCleanupService) {
+        this.pdfCleanupService.stop();
+        console.log('🧹 PDF cleanup service stopped');
       }
       
       this.isRunning = false;
