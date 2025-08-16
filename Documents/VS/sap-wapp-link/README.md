@@ -1,15 +1,26 @@
-# SAP WhatsApp Invoice Sender
+# SAP WhatsApp Invoice Automation System
 
 ## Overview
-This middleware service connects SAP Business One to WhatsApp for automated invoice delivery. It scans for new invoices and sends them via WhatsApp to customers.
+This automated system connects SAP Business One to WhatsApp for seamless invoice delivery. It processes emails from SAP, downloads PDFs, and sends WhatsApp notifications to salespersons with invoice attachments.
 
 ## Features
-- 🔍 Scans SAP B1 for new/unsent invoices every hour
-- 📱 Sends invoices via WhatsApp Business API (free)
-- 📄 Generates PDF invoices from SAP
-- 🎯 Customer phone number validation
-- 📊 Delivery tracking and status updates
-- 🔄 Retry mechanism for failed deliveries
+- � **Email Integration**: Monitors SAP emails with invoice PDFs
+- 📱 **WhatsApp Automation**: Sends PDFs with captions as single messages
+- 🕐 **Scheduled Processing**: Hourly checks at X:50 for optimal workflow
+- 📄 **PDF Management**: Downloads and organizes invoice PDFs
+- 🎯 **Smart Matching**: Links SAP invoices with downloaded PDFs
+- 🛡️ **Safety Controls**: No PDF = No message policy
+- 📊 **Delivery Tracking**: SAP field updates prevent duplicates
+- 🧹 **Auto Cleanup**: Removes old PDFs after 2 days
+
+## Workflow Schedule
+
+### Hourly Automation
+- **X:30** - SAP automatically emails new invoices
+- **X:40** - `pdf-download-service.js` downloads PDFs from email
+- **X:50** - `hybrid-invoice-service.js` processes WhatsApp notifications
+- **Daily 05:00** - PDF cleanup removes files older than 2 days
+- **Daily 18:00** - Email report with processing summary
 
 ## Installation
 
@@ -53,42 +64,57 @@ npm run dev
 ```
 
 ### Automatic Operation
-The service runs continuously and:
-1. Scans for new invoices every hour
-2. Generates PDF for each invoice
-3. Sends via WhatsApp to customer phone
-4. Updates delivery status in SAP
+The system runs continuously with these scheduled tasks:
+
+1. **X:50 every hour** - Main processing:
+   - Checks SAP for invoices with `U_whatsappsent = 'N'`
+   - Searches `downloaded-pdfs/` folder for matching PDFs
+   - Sends WhatsApp message (PDF + caption) if PDF found
+   - Updates `U_whatsappsent = 'Y'` in SAP after successful send
+   - Skips invoices without PDFs (will retry next hour)
+
+2. **Daily 18:00** - Email summary report
+3. **Daily 05:00** - Cleanup PDFs older than 2 days
 
 ## Architecture
 
 ```
-SAP B1 ←→ Service Layer ←→ WhatsApp Service ←→ WhatsApp Web
-                ↓
-           Invoice PDFs
+SAP B1 Email → PDF Download → SAP Processing → WhatsApp Delivery
+    ↓              ↓               ↓              ↓
+  X:30          X:40           X:50         Single Message
+                                           (PDF + Caption)
 ```
 
-## Free vs Paid Options
+## Safety Features
+- **PDF Required**: No PDF found = No message sent
+- **Single Messages**: PDF and text sent together (never separate)
+- **Duplicate Prevention**: SAP field tracking prevents re-sending
+- **Test Mode**: All messages redirected to test number in development
+- **Customer Protection**: Customer notifications disabled in production
 
-### Current Implementation (Free)
-- WhatsApp Web via `whatsapp-web.js`
-- Uses your personal WhatsApp account
-- No per-message costs
-- Requires phone to stay connected
+## Key Components
 
-### Upgrade Path (Paid)
-- WhatsApp Business API
-- Official Meta integration
-- Higher reliability
-- Per-message costs (~$0.005-0.009)
+### 1. Email PDF Download Service (`pdf-download-service.js`)
+- Monitors SAP email account
+- Downloads invoice PDFs to `downloaded-pdfs/` folder
+- Prevents duplicate downloads
+- Runs at X:40 every hour
 
-## Customization
+### 2. Hybrid Invoice Service (`hybrid-invoice-service.js`)
+- Main WhatsApp processing service
+- Checks SAP for unsent invoices (`U_whatsappsent = 'N'`)
+- Matches invoices with downloaded PDFs
+- Sends WhatsApp notifications to salespersons
+- Updates SAP tracking fields
+- Runs at X:50 every hour
 
-### Invoice Template
-- Customize PDF generation
-- Add company branding
-- Multi-language support
+### 3. PDF Cleanup Service (`pdf-cleanup-service.js`)
+- Removes PDFs older than 2 days
+- Prevents storage bloat
+- Runs daily at 05:00
 
-### Delivery Rules
-- Customer preferences
-- Business hours restrictions
-- Retry policies
+## Recent Fixes
+- ✅ **Fixed PDF Caption Issue**: PDFs now send with text captions as single messages
+- ✅ **Simplified WhatsApp Function**: Removed complex async logic causing timing issues
+- ✅ **Sequential Processing**: Uses `{caption: message}` options parameter approach
+- ✅ **Hourly Schedule**: Changed from every 5 minutes to X:50 hourly for optimal workflow

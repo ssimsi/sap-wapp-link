@@ -1,10 +1,13 @@
-import SimpleWhatsAppService from './simple-whatsapp-service.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth, MessageMedia } = pkg;
+import qrcode from 'qrcode-terminal';
 import EmailInvoiceMonitor from './email-invoice-monitor.js';
 import EmailReporter from './email-reporter.js';
 import PDFCleanupService from './pdf-cleanup-service.js';
 import https from 'https';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
 import cron from 'node-cron';
 
 // Load environment variables
@@ -12,7 +15,8 @@ dotenv.config({ path: '.env.local' });
 
 class HybridInvoiceService {
   constructor() {
-    this.whatsappService = new SimpleWhatsAppService();
+    this.whatsappClient = null;
+    this.whatsappReady = false;
     this.emailMonitor = new EmailInvoiceMonitor();
     this.emailReporter = new EmailReporter();
     this.pdfCleanupService = new PDFCleanupService();
@@ -60,7 +64,7 @@ class HybridInvoiceService {
     try {
       // Initialize WhatsApp service
       console.log('\n📱 Initializing WhatsApp service...');
-      await this.whatsappService.initialize();
+      await this.initializeWhatsApp();
       
       // Test email connection
       console.log('\n📧 Testing email connection...');
@@ -81,8 +85,8 @@ class HybridInvoiceService {
       console.log('\n✅ Hybrid service started successfully!');
       console.log('🔄 Now monitoring SAP invoices and matching with email PDFs...');
       
-      // Schedule invoice processing every 5 minutes
-      cron.schedule('*/5 * * * *', () => {
+      // Schedule invoice processing every hour at X:50
+      cron.schedule('50 * * * *', () => {
         this.processNewInvoices().catch(console.error);
       });
       
@@ -109,6 +113,149 @@ class HybridInvoiceService {
       await this.stop();
       process.exit(1);
     }
+  }
+
+  async initializeWhatsApp() {
+    console.log('🔧 Initializing WhatsApp Web client...');
+    
+    this.whatsappClient = new Client({
+      authStrategy: new LocalAuth({
+        clientId: 'hybrid-service'
+      }),
+      puppeteer: {
+        headless: true, 
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-gpu'
+        ]
+      }
+    });
+
+    // QR Code for authentication
+    this.whatsappClient.on('qr', (qr) => {
+      console.log('\n📱 WhatsApp Web QR Code:');
+      console.log('👆 Scan this QR code with your WhatsApp mobile app');
+      console.log('📱 Open WhatsApp > Settings > Linked Devices > Link a Device');
+      console.log('📷 Point your camera at this QR code:\n');
+      qrcode.generate(qr, { small: true });
+      console.log('\n⏳ Waiting for QR code scan...\n');
+    });
+
+    // Ready event
+    this.whatsappClient.on('ready', () => {
+      console.log('✅ WhatsApp Web client is ready!');
+      this.whatsappReady = true;
+    });
+
+    // Authentication events
+    this.whatsappClient.on('authenticated', () => {
+      console.log('🔐 WhatsApp authentication successful');
+    });
+
+    this.whatsappClient.on('auth_failure', (msg) => {
+      console.error('❌ WhatsApp authentication failed:', msg);
+    });
+
+    // Disconnection event
+    this.whatsappClient.on('disconnected', (reason) => {
+      console.log('📱 WhatsApp disconnected:', reason);
+      this.whatsappReady = false;
+    });
+
+    // Initialize the client
+    await this.whatsappClient.initialize();
+    
+    // Wait for ready state
+    await this.waitForWhatsAppReady();
+  }
+
+  async waitForWhatsAppReady() {
+    return new Promise((resolve) => {
+      if (this.whatsappReady) {
+        resolve();
+        return;
+      }
+
+      const checkReady = () => {
+        if (this.whatsappReady) {
+          resolve();
+        } else {
+          setTimeout(checkReady, 1000);
+        }
+      };
+
+      checkReady();
+    });
+  }
+
+  async sendWhatsAppMessage(phoneNumber, message, pdfPath = null) {
+    if (!this.whatsappReady) {
+      throw new Error('WhatsApp client is not ready');
+    }
+
+    try {
+      // Format phone number for WhatsApp
+      const formattedNumber = this.formatPhoneNumber(phoneNumber);
+      const chatId = `${formattedNumber}@c.us`;
+
+      console.log(`📱 Sending WhatsApp message to ${phoneNumber}...`);
+      console.log(`🔍 DEBUG: pdfPath provided: ${pdfPath}`);
+      console.log(`🔍 DEBUG: pdfPath exists: ${pdfPath ? fs.existsSync(pdfPath) : 'No path provided'}`);
+
+      // If PDF is provided, send PDF with text as caption in ONE message
+      if (pdfPath && fs.existsSync(pdfPath)) {
+        console.log(`📎 Sending PDF with caption as single message: ${path.basename(pdfPath)}`);
+        console.log(`📄 PDF file size: ${fs.statSync(pdfPath).size} bytes`);
+        console.log(`📝 Caption text: ${message}`);
+        
+        // Create MessageMedia object from file path
+        const media = MessageMedia.fromFilePath(pdfPath);
+        console.log(`🔍 Media object created, mimetype: ${media.mimetype}`);
+        
+        // Send PDF with caption using the options parameter (THIS is what worked before)
+        console.log(`� Sending PDF with caption using options parameter...`);
+        const result = await this.whatsappClient.sendMessage(chatId, media, { caption: message });
+        console.log(`✅ PDF with caption sent successfully to ${phoneNumber}`);
+        console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+        
+      } else {
+        // If no PDF, just send text message
+        console.log(`📝 Sending text-only message (no PDF provided)...`);
+        const result = await this.whatsappClient.sendMessage(chatId, message);
+        console.log(`✅ Text message sent to ${phoneNumber}`);
+        console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+      }
+
+      return true;
+
+    } catch (error) {
+      console.error(`❌ Failed to send WhatsApp message to ${phoneNumber}:`, error.message);
+      console.log(`🔍 DEBUG: Error details:`, error);
+      throw error;
+    }
+  }
+
+  formatPhoneNumber(phoneNumber) {
+    // Remove any non-digit characters
+    let cleaned = phoneNumber.replace(/\D/g, '');
+    
+    // Remove leading + if present
+    if (cleaned.startsWith('54')) {
+      return cleaned;
+    }
+    
+    // Add Argentina country code if not present
+    if (!cleaned.startsWith('54')) {
+      cleaned = '54' + cleaned;
+    }
+    
+    return cleaned;
   }
 
   async processNewInvoices() {
@@ -175,21 +322,24 @@ class HybridInvoiceService {
       console.log(`🧪 TEST MODE ACTIVE - All messages will go to ${process.env.TEST_PHONE}`);
     }
     
-    // 1. Generate WhatsApp message from SAP data
-    const whatsappMessage = this.generateWhatsAppMessage(invoice);
-    
-    // 2. Search for corresponding PDF in email (using invoice date for faster search)
+    // 1. CRITICAL: Search for PDF FIRST - no PDF = no processing at all
     const pdfPath = await this.findInvoicePDF(invoice.DocNum, invoice.DocDate, invoice.Series);
     
     if (!pdfPath) {
-      console.log(`⚠️ No PDF found for invoice ${invoice.DocNum} - adding to missed list`);
+      console.log(`🚫 CRITICAL: No PDF found for invoice ${invoice.DocNum} - STOPPING ALL PROCESSING`);
+      console.log(`📋 NO WhatsApp messages will be sent (customer OR salesperson)`);
       this.missedInvoices.push({
         invoice,
-        error: 'PDF not found in email',
+        error: 'PDF not found - no processing done',
         timestamp: new Date()
       });
       return;
     }
+    
+    console.log(`✅ PDF found for invoice ${invoice.DocNum} - proceeding with message generation`);
+    
+    // 2. Generate WhatsApp message from SAP data
+    const whatsappMessage = this.generateWhatsAppMessage(invoice);
     
     // 3. Get customer phone number
     const customerPhone = this.getCustomerPhone(invoice);
@@ -209,7 +359,7 @@ class HybridInvoiceService {
       
       // Skip customer message completely, only send salesperson notification
       await this.markInvoiceAsSent(invoice.DocEntry);
-      await this.sendSalespersonNotification(invoice);
+      await this.sendSalespersonNotification(invoice, pdfPath);
       
       // Clean up temp PDF
       if (fs.existsSync(pdfPath)) {
@@ -233,13 +383,13 @@ class HybridInvoiceService {
     console.log(`📱 Sending to ${messageTarget}: ${phoneToUse}`);
     
     try {
-      await this.whatsappService.sendMessage(phoneToUse, whatsappMessage, pdfPath);
+      await this.sendWhatsAppMessage(phoneToUse, whatsappMessage, pdfPath);
       
       // 5. Mark as sent in SAP
       await this.markInvoiceAsSent(invoice.DocEntry);
       
       // 6. Send salesperson notification
-      await this.sendSalespersonNotification(invoice);
+      await this.sendSalespersonNotification(invoice, pdfPath);
       
       // 7. Clean up temp PDF
       if (fs.existsSync(pdfPath)) {
@@ -256,160 +406,92 @@ class HybridInvoiceService {
   }
 
   async findInvoicePDF(docNum, invoiceDate, series) {
-    console.log(`   🔍 Searching email for PDF with filename containing DocNum: ${docNum}`);
+    console.log(`   🔍 Searching downloaded PDFs folder ONLY for DocNum: ${docNum}`);
     console.log(`   📅 Invoice date: ${invoiceDate}, Series: ${series}`);
     
     try {
-      // Use invoice date for more efficient search (search same day + 1 day buffer)
-      const invoiceDateObj = new Date(invoiceDate);
-      const searchFromDate = new Date(invoiceDateObj);
-      searchFromDate.setDate(invoiceDateObj.getDate() - 1); // 1 day before
-      const searchToDate = new Date(invoiceDateObj);
-      searchToDate.setDate(invoiceDateObj.getDate() + 1); // 1 day after
-      
-      console.log(`   📆 Searching emails from ${searchFromDate.toDateString()} to ${searchToDate.toDateString()}`);
-      
-      // Search emails for the specific date range
-      const searchCriteria = [
-        ['SINCE', searchFromDate],
-        ['BEFORE', searchToDate]
-      ];
-      
-      const emailIds = await this.searchEmails(searchCriteria);
-      
-      if (emailIds.length === 0) {
-        console.log(`   📪 No emails found in date range for invoice date ${invoiceDate}`);
-        return null;
+      // ONLY search in downloaded folder - NO EMAIL SEARCH!
+      const localPdfPath = await this.findPDFInDownloadedFolder(docNum, series);
+      if (localPdfPath) {
+        console.log(`   ✅ Found PDF in downloaded folder: ${localPdfPath}`);
+        return localPdfPath;
       }
       
-      console.log(`   📧 Found ${emailIds.length} email(s) in date range, searching for PDF with DocNum ${docNum}`);
-      
-      // Search through emails for PDF with matching filename
-      for (const uid of emailIds) {
-        const pdfPath = await this.extractPDFFromEmail(uid, docNum, series);
-        if (pdfPath) {
-          console.log(`   ✅ Found matching PDF: ${pdfPath}`);
-          return pdfPath;
-        }
-      }
-      
-      console.log(`   ❌ No PDF found with filename containing DocNum ${docNum} in date range`);
+      console.log(`   ❌ PDF not found in downloaded folder for DocNum ${docNum}`);
       return null;
       
     } catch (error) {
-      console.error(`   ❌ Error searching for PDF: ${error.message}`);
+      console.error(`❌ Error searching downloaded PDFs for ${docNum}:`, error.message);
       return null;
     }
   }
 
-  async searchEmails(criteria) {
-    return new Promise((resolve, reject) => {
-      this.emailMonitor.imap.search(criteria, (err, results) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(results || []);
-        }
-      });
-    });
-  }
-
-  async extractPDFFromEmail(uid, docNum, series) {
-    return new Promise((resolve, reject) => {
-      const f = this.emailMonitor.imap.fetch(uid, { bodies: '' });
-
-      f.on('message', (msg, seqno) => {
-        let emailData = '';
-
-        msg.on('body', (stream, info) => {
-          stream.on('data', (chunk) => {
-            emailData += chunk.toString('utf8');
-          });
-        });
-
-        msg.once('end', async () => {
-          try {
-            const { simpleParser } = await import('mailparser');
-            const parsed = await simpleParser(emailData);
-            
-            console.log(`     📧 Checking email: "${parsed.subject}"`);
-            
-            // Look for PDF attachments
-            const pdfAttachments = parsed.attachments?.filter(
-              att => att.contentType === 'application/pdf' || 
-                     att.filename?.toLowerCase().endsWith('.pdf')
-            ) || [];
-
-            if (pdfAttachments.length === 0) {
-              console.log('     📎 No PDF attachments found in this email');
-              resolve(null);
-              return;
-            }
-
-            console.log(`     📎 Found ${pdfAttachments.length} PDF attachment(s)`);
-            
-            // Search for PDF with filename containing the DocNum
-            let matchingPdf = null;
-            for (const attachment of pdfAttachments) {
-              console.log(`       🔍 Checking PDF: ${attachment.filename}`);
-              
-              // Check if filename contains the DocNum
-              if (attachment.filename && attachment.filename.includes(docNum.toString())) {
-                console.log(`       ✅ MATCH! PDF ${attachment.filename} contains DocNum ${docNum}`);
-                matchingPdf = attachment;
-                break;
-              }
-            }
-
-            if (!matchingPdf) {
-              console.log(`     ❌ No PDF filename contains DocNum ${docNum}`);
-              resolve(null);
-              return;
-            }
-
-            // Save the matching PDF attachment with appropriate filename
-            let finalFileName;
-            
-            // Series detection: 7 digits AND starts with 9 = Series 76
-            const isSeries76 = docNum.length === 7 && docNum.startsWith('9');
-            
-            if (isSeries76) {
-              // For Series 76, rename to Comprobante_XXXXXXX.pdf
-              finalFileName = `Comprobante_${docNum}.pdf`;
-              console.log(`     🎯 Series 76 detected (7 digits, starts with 9) - renaming PDF to: ${finalFileName}`);
-            } else {
-              // For Series 4, keep original filename format
-              finalFileName = matchingPdf.filename;
-              console.log(`     📋 Series 4 detected - keeping original filename: ${finalFileName}`);
-            }
-            
-            const tempFilePath = `./temp-pdfs/${finalFileName}`;
-            
-            // Ensure directory exists
-            if (!fs.existsSync('./temp-pdfs')) {
-              fs.mkdirSync('./temp-pdfs', { recursive: true });
-            }
-            
-            fs.writeFileSync(tempFilePath, matchingPdf.content);
-            console.log(`     💾 Saved matching PDF: ${tempFilePath}`);
-            
-            resolve(tempFilePath);
-
-          } catch (parseError) {
-            console.error('     ❌ Error parsing email:', parseError.message);
-            resolve(null);
+  async findPDFInDownloadedFolder(docNum, series) {
+    const downloadedPdfFolder = './downloaded-pdfs';
+    
+    try {
+      // Check if downloaded-pdfs folder exists
+      if (!fs.existsSync(downloadedPdfFolder)) {
+        console.log(`   📁 Downloaded PDFs folder does not exist: ${downloadedPdfFolder}`);
+        return null;
+      }
+      
+      // Get all PDF files in the folder
+      const files = fs.readdirSync(downloadedPdfFolder);
+      const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
+      
+      console.log(`   📄 Searching through ${pdfFiles.length} downloaded PDFs for DocNum ${docNum}`);
+      
+      // Search for PDF containing the DocNum in filename
+      for (const pdfFile of pdfFiles) {
+        // Extract the original filename from timestamped filename
+        // Format: "2025-08-15T14-30-00-123Z_original-filename.pdf"
+        const originalName = pdfFile.includes('_') ? pdfFile.split('_').slice(1).join('_') : pdfFile;
+        
+        console.log(`     🔍 Checking: ${originalName} for DocNum ${docNum}`);
+        
+        if (originalName.includes(docNum)) {
+          const fullPath = path.join(downloadedPdfFolder, pdfFile);
+          console.log(`     ✅ MATCH FOUND! PDF ${originalName} contains DocNum ${docNum}`);
+          
+          // Copy to temp-pdfs folder with proper naming for the hybrid service
+          const tempPdfFolder = './temp-pdfs';
+          if (!fs.existsSync(tempPdfFolder)) {
+            fs.mkdirSync(tempPdfFolder, { recursive: true });
           }
-        });
-      });
-
-      f.once('error', (err) => {
-        console.error('❌ Error fetching email:', err);
-        resolve(null);
-      });
-    });
+          
+          // Generate final filename based on series
+          let finalFileName;
+          const isSeries76 = docNum.length === 7 && docNum.startsWith('9');
+          
+          if (isSeries76) {
+            finalFileName = `Comprobante_${docNum}.pdf`;
+            console.log(`     🎯 Series 76 detected - renaming to: ${finalFileName}`);
+          } else {
+            finalFileName = originalName;
+            console.log(`     📋 Series 4 detected - keeping original name: ${finalFileName}`);
+          }
+          
+          const finalPath = path.join(tempPdfFolder, finalFileName);
+          
+          // Copy the file to temp folder
+          fs.copyFileSync(fullPath, finalPath);
+          console.log(`     💾 Copied PDF to: ${finalPath}`);
+          
+          return finalPath;
+        }
+      }
+      
+      console.log(`   ❌ No downloaded PDF found with DocNum ${docNum}`);
+      return null;
+      
+    } catch (error) {
+      console.error(`❌ Error searching downloaded PDFs folder:`, error.message);
+      return null;
+    }
   }
 
-  async sendSalespersonNotification(invoice) {
+  async sendSalespersonNotification(invoice, pdfPath = null) {
     try {
       // Get salesperson code from invoice (assuming it's in SalesPersonCode field)
       if (!invoice.SalesPersonCode) {
@@ -436,7 +518,7 @@ class HybridInvoiceService {
       // Send to salesperson (in test mode, this also goes to test phone)
       const phoneToUse = process.env.TEST_MODE === 'true' ? process.env.TEST_PHONE : salesPersonPhone;
       
-      await this.whatsappService.sendMessage(phoneToUse, salespersonMessage);
+      await this.sendWhatsAppMessage(phoneToUse, salespersonMessage, pdfPath);
       
       console.log(`   ✅ Salesperson notification sent to ${salesPersonName}`);
 
@@ -641,7 +723,7 @@ class HybridInvoiceService {
         '� Revisar configuración del servicio'
       ].join('\n');
       
-      await this.whatsappService.sendMessage(process.env.ADMIN_PHONE, whatsappSummary);
+      await this.sendWhatsAppMessage(process.env.ADMIN_PHONE, whatsappSummary);
       
       // Clear missed invoices after reporting
       this.missedInvoices = [];
@@ -662,8 +744,10 @@ class HybridInvoiceService {
         console.log('📧 Email monitoring stopped');
       }
       
-      if (this.whatsappService) {
-        await this.whatsappService.stop();
+      if (this.whatsappClient) {
+        console.log('🛑 Stopping WhatsApp client...');
+        await this.whatsappClient.destroy();
+        this.whatsappReady = false;
         console.log('📱 WhatsApp service stopped');
       }
       
