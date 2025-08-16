@@ -18,7 +18,7 @@ class SimpleWhatsAppService {
         clientId: 'hybrid-service'
       }),
       puppeteer: {
-        headless: true,
+        headless: false, 
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -100,19 +100,30 @@ class SimpleWhatsAppService {
       const chatId = `${formattedNumber}@c.us`;
 
       console.log(`📱 Sending WhatsApp message to ${phoneNumber}...`);
+      console.log(`🔍 DEBUG: pdfPath provided: ${pdfPath}`);
+      console.log(`🔍 DEBUG: pdfPath exists: ${pdfPath ? fs.existsSync(pdfPath) : 'No path provided'}`);
 
-      // Send text message
-      await this.client.sendMessage(chatId, message);
-      console.log(`✅ Text message sent to ${phoneNumber}`);
-
-      // Send PDF attachment if provided
+      // If PDF is provided, send message with PDF attachment
       if (pdfPath && fs.existsSync(pdfPath)) {
-        console.log(`📎 Sending PDF attachment: ${path.basename(pdfPath)}`);
+        console.log(`📎 Sending message with PDF attachment: ${path.basename(pdfPath)}`);
+        console.log(`📄 PDF file size: ${fs.statSync(pdfPath).size} bytes`);
         
         const media = MessageMedia.fromFilePath(pdfPath);
-        await this.client.sendMessage(chatId, media);
         
-        console.log(`✅ PDF attachment sent to ${phoneNumber}`);
+        console.log(`🔍 DEBUG: Media object created, mimetype: ${media.mimetype}`);
+        console.log(`🔍 DEBUG: Setting caption: ${message.substring(0, 100)}...`);
+        
+        // Set caption on media object
+        media.caption = message;
+        
+        // Send the media with caption
+        await this.client.sendMessage(chatId, media);
+        console.log(`✅ Message with PDF attachment sent to ${phoneNumber}`);
+      } else {
+        // Send text message only if no PDF
+        console.log(`⚠️ No PDF provided or file doesn't exist, sending text only`);
+        await this.client.sendMessage(chatId, message);
+        console.log(`✅ Text message sent to ${phoneNumber}`);
       }
 
       return true;
