@@ -706,21 +706,36 @@ class HybridInvoiceService {
       return;
     }
     
-    console.log(`📧 Sending daily report for ${this.missedInvoices.length} missed invoices`);
+    // Deduplicate missed invoices by DocNum, keeping the latest error for each invoice
+    const seenInvoices = new Set();
+    const uniqueMissedInvoices = [];
+    
+    // Process in reverse order to get the latest error for each invoice
+    for (let i = this.missedInvoices.length - 1; i >= 0; i--) {
+      const item = this.missedInvoices[i];
+      const docNum = item.invoice.DocNum;
+      
+      if (!seenInvoices.has(docNum)) {
+        seenInvoices.add(docNum);
+        uniqueMissedInvoices.unshift(item); // Add to beginning to maintain chronological order
+      }
+    }
+    
+    console.log(`📧 Sending daily report: ${this.missedInvoices.length} total errors, ${uniqueMissedInvoices.length} unique invoices`);
     
     try {
-      // Send email report to ssimsi@gmail.com
-      await this.emailReporter.sendDailyReport(this.missedInvoices);
+      // Send email report to ssimsi@gmail.com with deduplicated invoices
+      await this.emailReporter.sendDailyReport(uniqueMissedInvoices);
       
       // Also send summary via WhatsApp to admin
       const whatsappSummary = [
         '📊 *REPORTE DIARIO*',
         `📅 ${new Date().toLocaleDateString('es-AR')}`,
-        `📋 ${this.missedInvoices.length} facturas no enviadas`,
+        `📋 ${uniqueMissedInvoices.length} facturas no enviadas (de ${this.missedInvoices.length} errores totales)`,
         '',
         '📧 Reporte detallado enviado a ssimsi@gmail.com',
         '',
-        '� Revisar configuración del servicio'
+        '⚙️ Revisar configuración del servicio'
       ].join('\n');
       
       await this.sendWhatsAppMessage(process.env.ADMIN_PHONE, whatsappSummary);
