@@ -1,0 +1,17 @@
+.wwebjs_auth/
+.wwebjs_cache/
+node_modules/
+.env
+.env.local
+logs/
+temp-pdfs/
+downloaded-pdfs/
+
+# WhatsApp Session Cache (exclude cache but keep essential session data)
+whatsapp-session/session/Default/Cache/
+whatsapp-session/session/Default/Code Cache/
+whatsapp-session/session/Default/DawnCache/
+whatsapp-session/session/Default/GPUCache/
+whatsapp-session/session/Default/ShaderCache/
+whatsapp-session/session/Default/GrShaderCache/
+whatsapp-session/session/*/Service Worker/CacheStorage/
