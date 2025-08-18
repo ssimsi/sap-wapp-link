@@ -53,7 +53,17 @@ class PDFDownloadService {
     try {
       if (fs.existsSync(this.processedEmailsFile)) {
         const data = fs.readFileSync(this.processedEmailsFile, 'utf8');
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        
+        // Handle legacy array format
+        if (Array.isArray(parsed)) {
+          return { uids: parsed, lastUpdate: null };
+        }
+        
+        // Handle new object format
+        if (parsed && typeof parsed === 'object' && parsed.uids) {
+          return parsed;
+        }
       }
     } catch (error) {
       this.log(`⚠️ Error loading processed emails file: ${error.message}`);

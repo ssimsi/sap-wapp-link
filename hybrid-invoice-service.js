@@ -1,8 +1,6 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode-terminal';
-import EmailInvoiceMonitor from './email-invoice-monitor.js';
-import EmailReporter from './email-reporter.js';
 import PDFCleanupService from './pdf-cleanup-service.js';
 import https from 'https';
 import dotenv from 'dotenv';
@@ -17,19 +15,19 @@ class HybridInvoiceService {
   constructor() {
     this.whatsappClient = null;
     this.whatsappReady = false;
-    this.emailMonitor = new EmailInvoiceMonitor();
-    this.emailReporter = new EmailReporter();
     this.pdfCleanupService = new PDFCleanupService();
     this.sapConnection = new SAPConnection();
     this.isRunning = false;
     this.processedInvoices = new Set();
     this.missedInvoices = [];
-    this.emailCache = new Map(); // Cache emails to avoid repeated searches
   }
 
   async start() {
-    console.log('🚀 Starting Hybrid Invoice Service (SAP + Email + WhatsApp)');
-    console.log('===========================================================');
+    console.log('🚀 Starting Hybrid Invoice Service (SAP + WhatsApp)');
+    console.log('==================================================');
+    console.log('📧 PDF downloads handled by separate PDF Download Service');
+    console.log('🔄 This service processes invoices from downloaded-pdfs folder');
+    console.log('==================================================');
     
     // Show test mode status prominently
     if (process.env.TEST_MODE === 'true') {
@@ -66,12 +64,6 @@ class HybridInvoiceService {
       console.log('\n📱 Initializing WhatsApp service...');
       await this.initializeWhatsApp();
       
-      // Test email connection
-      console.log('\n📧 Testing email connection...');
-      await this.emailMonitor.connect();
-      await this.emailMonitor.openInbox();
-      console.log('✅ Email connection successful');
-      
       // Test SAP connection
       console.log('\n🔗 Testing SAP connection...');
       const sapConnected = await this.sapConnection.login();
@@ -83,7 +75,8 @@ class HybridInvoiceService {
       // Start monitoring
       this.isRunning = true;
       console.log('\n✅ Hybrid service started successfully!');
-      console.log('🔄 Now monitoring SAP invoices and matching with email PDFs...');
+      console.log('🔄 Now processing SAP invoices with PDFs from downloaded-pdfs folder...');
+      console.log('📋 Make sure PDF Download Service is running separately for X:40 downloads!');
       
       // Schedule invoice processing every hour at X:50
       cron.schedule('50 * * * *', () => {
@@ -725,7 +718,7 @@ class HybridInvoiceService {
     
     try {
       // Send email report to ssimsi@gmail.com with deduplicated invoices
-      await this.emailReporter.sendDailyReport(uniqueMissedInvoices);
+      // await this.emailReporter.sendDailyReport(uniqueMissedInvoices); // Email reporter removed
       
       // Also send summary via WhatsApp to admin
       const whatsappSummary = [
@@ -754,11 +747,6 @@ class HybridInvoiceService {
     console.log('\n🛑 Stopping Hybrid Invoice Service...');
     
     try {
-      if (this.emailMonitor) {
-        this.emailMonitor.disconnect();
-        console.log('📧 Email monitoring stopped');
-      }
-      
       if (this.whatsappClient) {
         console.log('🛑 Stopping WhatsApp client...');
         await this.whatsappClient.destroy();
