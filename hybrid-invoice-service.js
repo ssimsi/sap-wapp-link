@@ -20,6 +20,26 @@ class HybridInvoiceService {
     this.isRunning = false;
     this.processedInvoices = new Set();
     this.missedInvoices = [];
+    this.reconnecting = false;
+    this.maxReconnectAttempts = 5;
+    
+    // Session persistence tracking
+    this.lastAuthTime = null;
+    this.lastPingTime = null;
+    this.keepAliveInterval = null;
+    this.healthCheckInterval = null;
+    
+    // Session alert settings
+    this.sessionAlertEnabled = process.env.SESSION_ALERT_ENABLED === 'true';
+    this.sessionAlertEmail = process.env.SESSION_ALERT_EMAIL || 'ssimsi@gmail.com';
+    this.sessionAlertThreshold = parseInt(process.env.SESSION_ALERT_THRESHOLD_HOURS) || 72;
+    this.lastAlertSent = null;
+    
+    // Initialize email transporter for alerts
+    this.initializeEmailAlerts();
+    
+    // Load previous session info if available
+    this.loadSessionInfo();
   }
 
   async start() {
@@ -108,76 +128,187 @@ class HybridInvoiceService {
     }
   }
 
-  async initializeWhatsApp() {
+  async initializeWhatsApp(maxRetries = 3) {
     console.log('🔧 Initializing WhatsApp Web client...');
     
-    this.whatsappClient = new Client({
-      authStrategy: new LocalAuth({
-        clientId: 'hybrid-service'
-      }),
-      puppeteer: {
-        headless: true, 
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-gpu'
-        ]
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Attempt ${attempt}/${maxRetries} to initialize WhatsApp...`);
+        
+        // Clean up any existing client
+        if (this.whatsappClient) {
+          try {
+            await this.whatsappClient.destroy();
+          } catch (error) {
+            console.log('🧹 Cleaned up previous client instance');
+          }
+          this.whatsappClient = null;
+          this.whatsappReady = false;
+        }
+
+        this.whatsappClient = new Client({
+          authStrategy: new LocalAuth({
+            clientId: 'sap-whatsapp-persistent', // Stable client ID
+            dataPath: './.wwebjs_auth/'
+          }),
+          puppeteer: {
+            headless: true,
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-accelerated-2d-canvas',
+              '--no-first-run',
+              '--no-zygote',
+              '--single-process',
+              '--disable-gpu',
+              '--disable-web-security',
+              '--disable-features=VizDisplayCompositor',
+              '--disable-background-timer-throttling',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-renderer-backgrounding',
+              '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            ],
+            executablePath: undefined, // Use default Chrome/Chromium
+            timeout: 60000 // Increase timeout for slow connections
+          },
+          webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+          },
+          // Session persistence settings
+          restartOnAuthFail: true,
+          takeoverOnConflict: false,
+          takeoverTimeoutMs: 0
+        });
+
+        // QR Code for authentication
+        this.whatsappClient.on('qr', (qr) => {
+          console.log('\n📱 WhatsApp Web QR Code:');
+          console.log('👆 Scan this QR code with your WhatsApp mobile app');
+          console.log('📱 Open WhatsApp > Settings > Linked Devices > Link a Device');
+          console.log('📷 Point your camera at this QR code:\n');
+          qrcode.generate(qr, { small: true });
+          console.log('\n⏳ Waiting for QR code scan...\n');
+        });
+
+        // Authentication events
+        this.whatsappClient.on('authenticated', () => {
+          console.log('🔐 WhatsApp authentication successful');
+        });
+
+        this.whatsappClient.on('auth_failure', (msg) => {
+          console.error('❌ WhatsApp authentication failed:', msg);
+          this.whatsappReady = false;
+          
+          // Send critical failure alert
+          this.sendSessionAlert('FAILURE', `Authentication failed: ${msg}`, 0)
+            .catch(err => console.warn('⚠️ Failed to send failure alert:', err.message));
+        });
+
+        // Loading states
+        this.whatsappClient.on('loading_screen', (percent, message) => {
+          console.log(`� WhatsApp loading: ${percent}% - ${message}`);
+        });
+
+        // Ready event with enhanced features
+        this.whatsappClient.on('ready', () => {
+          console.log('✅ WhatsApp Web client is ready!');
+          this.whatsappReady = true;
+          this.lastAuthTime = Date.now();
+          
+          // Start session monitoring and keep-alive
+          this.startSessionKeepAlive();
+          this.storeSessionInfo();
+          
+          console.log(`📱 Connected as: ${this.whatsappClient?.info?.pushname || 'Unknown'}`);
+        });
+
+        // Disconnection event with enhanced auto-reconnection
+        this.whatsappClient.on('disconnected', (reason) => {
+          console.log('📱 WhatsApp disconnected:', reason);
+          this.whatsappReady = false;
+          
+          // Stop keep-alive when disconnected
+          this.stopSessionKeepAlive();
+          
+          // Auto-reconnect if service is still running
+          if (this.isRunning && !this.reconnecting) {
+            console.log('🔄 Attempting to reconnect WhatsApp...');
+            this.attemptReconnection();
+          }
+        });
+
+        // Monitor for session conflicts and expiration
+        this.whatsappClient.on('change_state', (state) => {
+          console.log('🔄 WhatsApp state changed:', state);
+          
+          // Handle potential session conflicts
+          if (state === 'CONFLICT' || state === 'UNLAUNCHED') {
+            console.log('⚠️ Potential session conflict detected');
+            this.handleSessionConflict();
+          }
+        });
+
+        this.whatsappClient.on('message', (message) => {
+          console.log('📩 WhatsApp message received (debug):', message.from);
+        });
+
+        // Initialize the client with timeout
+        console.log('⏰ Starting WhatsApp initialization (10 second timeout)...');
+        await Promise.race([
+          this.whatsappClient.initialize(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('WhatsApp initialization timeout')), 10000)
+          )
+        ]);
+        
+        // Wait for ready state with timeout
+        await this.waitForWhatsAppReady(10000);
+        
+        console.log(`✅ WhatsApp initialized successfully on attempt ${attempt}`);
+        return; // Success, exit retry loop
+        
+      } catch (error) {
+        console.error(`❌ WhatsApp initialization attempt ${attempt} failed:`, error.message);
+        
+        // Clean up failed client
+        if (this.whatsappClient) {
+          try {
+            await this.whatsappClient.destroy();
+          } catch (destroyError) {
+            console.log('🧹 Cleanup after failed attempt');
+          }
+          this.whatsappClient = null;
+          this.whatsappReady = false;
+        }
+        
+        if (attempt < maxRetries) {
+          const waitTime = attempt * 2; // Progressive delay: 2s, 4s, 6s
+          console.log(`⏳ Waiting ${waitTime} seconds before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+        } else {
+          console.error(`💥 WhatsApp initialization failed after ${maxRetries} attempts`);
+          throw new Error(`WhatsApp initialization failed after ${maxRetries} attempts: ${error.message}`);
+        }
       }
-    });
-
-    // QR Code for authentication
-    this.whatsappClient.on('qr', (qr) => {
-      console.log('\n📱 WhatsApp Web QR Code:');
-      console.log('👆 Scan this QR code with your WhatsApp mobile app');
-      console.log('📱 Open WhatsApp > Settings > Linked Devices > Link a Device');
-      console.log('📷 Point your camera at this QR code:\n');
-      qrcode.generate(qr, { small: true });
-      console.log('\n⏳ Waiting for QR code scan...\n');
-    });
-
-    // Ready event
-    this.whatsappClient.on('ready', () => {
-      console.log('✅ WhatsApp Web client is ready!');
-      this.whatsappReady = true;
-    });
-
-    // Authentication events
-    this.whatsappClient.on('authenticated', () => {
-      console.log('🔐 WhatsApp authentication successful');
-    });
-
-    this.whatsappClient.on('auth_failure', (msg) => {
-      console.error('❌ WhatsApp authentication failed:', msg);
-    });
-
-    // Disconnection event
-    this.whatsappClient.on('disconnected', (reason) => {
-      console.log('📱 WhatsApp disconnected:', reason);
-      this.whatsappReady = false;
-    });
-
-    // Initialize the client
-    await this.whatsappClient.initialize();
-    
-    // Wait for ready state
-    await this.waitForWhatsAppReady();
+    }
   }
 
-  async waitForWhatsAppReady() {
-    return new Promise((resolve) => {
+  async waitForWhatsAppReady(timeout = 30000) {
+    return new Promise((resolve, reject) => {
       if (this.whatsappReady) {
         resolve();
         return;
       }
 
+      const startTime = Date.now();
+      
       const checkReady = () => {
         if (this.whatsappReady) {
           resolve();
+        } else if (Date.now() - startTime >= timeout) {
+          reject(new Error(`WhatsApp ready timeout after ${timeout/1000} seconds`));
         } else {
           setTimeout(checkReady, 1000);
         }
@@ -187,9 +318,347 @@ class HybridInvoiceService {
     });
   }
 
+  async attemptReconnection(attempt = 1) {
+    if (this.reconnecting) {
+      return; // Already trying to reconnect
+    }
+    
+    this.reconnecting = true;
+    
+    try {
+      console.log(`🔄 WhatsApp reconnection attempt ${attempt}/${this.maxReconnectAttempts}`);
+      
+      if (attempt > this.maxReconnectAttempts) {
+        console.error('💥 Max reconnection attempts reached. WhatsApp service unavailable.');
+        this.reconnecting = false;
+        return;
+      }
+      
+      // Wait before reconnecting (progressive delay)
+      const delay = Math.min(attempt * 5000, 30000); // 5s, 10s, 15s, 20s, 25s, max 30s
+      console.log(`⏳ Waiting ${delay/1000} seconds before reconnection...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Try to reconnect
+      await this.initializeWhatsApp(1); // Single attempt for reconnection
+      
+      console.log('✅ WhatsApp reconnected successfully!');
+      this.reconnecting = false;
+      
+      // Send recovery notification
+      await this.sendSessionAlert('RECOVERED', 'WhatsApp session has been automatically reconnected and is now active.', 0)
+        .catch(err => console.warn('⚠️ Failed to send recovery notification:', err.message));
+      
+    } catch (error) {
+      console.error(`❌ Reconnection attempt ${attempt} failed:`, error.message);
+      this.reconnecting = false;
+      
+      // Try again if we haven't reached max attempts
+      if (attempt < this.maxReconnectAttempts) {
+        setTimeout(() => this.attemptReconnection(attempt + 1), 1000);
+      } else {
+        console.error('💥 All reconnection attempts failed. WhatsApp service unavailable.');
+      }
+    }
+  }
+
+  // 🔧 SESSION PERSISTENCE METHODS
+  
+  initializeEmailAlerts() {
+    if (!this.sessionAlertEnabled) {
+      console.log('📧 Session email alerts disabled');
+      return;
+    }
+    
+    const emailUser = process.env.EMAIL_USERNAME || process.env.EMAIL_USER;
+    const emailPassword = process.env.EMAIL_PASSWORD;
+    
+    if (!emailUser || !emailPassword) {
+      console.warn('⚠️ Email credentials not configured - session alerts disabled');
+      this.sessionAlertEnabled = false;
+      return;
+    }
+    
+    // We'll use dynamic import when needed to avoid breaking the main import
+    console.log(`📧 Session email alerts enabled - notifications will be sent to ${this.sessionAlertEmail}`);
+  }
+  
+  async sendSessionAlert(type, message, sessionAge = 0) {
+    if (!this.sessionAlertEnabled) return;
+    
+    try {
+      // Dynamic import to avoid breaking main flow
+      const nodemailer = await import('nodemailer');
+      
+      const emailUser = process.env.EMAIL_USERNAME || process.env.EMAIL_USER;
+      const emailPassword = process.env.EMAIL_PASSWORD;
+      
+      const transporter = nodemailer.default.createTransporter({
+        service: 'gmail',
+        auth: {
+          user: emailUser,
+          pass: emailPassword
+        }
+      });
+      
+      const urgencyEmoji = sessionAge > 168 ? '🚨' : sessionAge > 120 ? '⚠️' : '📢';
+      const subject = `${urgencyEmoji} WhatsApp Session ${type} - SAP Integration`;
+      
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #2196F3, #1976D2); color: white; padding: 20px; border-radius: 10px 10px 0 0;">
+            <h1 style="margin: 0; font-size: 24px;">${urgencyEmoji} Session ${type}</h1>
+            <p style="margin: 5px 0 0 0; opacity: 0.9;">WhatsApp Session Status Alert</p>
+          </div>
+          
+          <div style="background: #f9f9f9; padding: 20px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #333; margin-top: 0;">Alert Details</h2>
+            
+            <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <strong>📅 Alert Time:</strong> ${new Date().toLocaleString()}<br>
+              <strong>⏰ Session Age:</strong> ${Math.round(sessionAge)} hours<br>
+              <strong>🎯 Alert Type:</strong> ${type}<br>
+              <strong>📱 System:</strong> SAP-WhatsApp Integration
+            </div>
+            
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196F3;">
+              <strong>📋 Message:</strong><br>
+              ${message}
+            </div>
+            
+            <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+              <strong>🔧 Recommended Actions:</strong><br>
+              • Check session status: <code>node session-manager.js --status</code><br>
+              • Create backup: <code>node session-manager.js --backup</code><br>
+              • If needed, clean session: <code>node session-manager.js --clean</code>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const mailOptions = {
+        from: emailUser,
+        to: this.sessionAlertEmail,
+        subject: subject,
+        html: htmlContent
+      };
+
+      await transporter.sendMail(mailOptions);
+      this.lastAlertSent = Date.now();
+      
+      console.log(`📧 Session alert sent to ${this.sessionAlertEmail}: ${type}`);
+      
+    } catch (error) {
+      console.warn('⚠️ Failed to send session alert email:', error.message);
+    }
+  }
+  
+  startSessionKeepAlive() {
+    console.log('💓 Starting WhatsApp session keep-alive monitoring...');
+    
+    // Clear any existing intervals
+    this.stopSessionKeepAlive();
+    
+    // Ping every 5 minutes to keep session active
+    this.keepAliveInterval = setInterval(async () => {
+      try {
+        if (this.whatsappReady && this.whatsappClient) {
+          // Send a simple status check to keep session alive
+          const info = await this.whatsappClient.getState();
+          console.log('💓 Session keep-alive ping:', info);
+          
+          // Check if session is still valid
+          if (info === 'CONNECTED') {
+            this.lastPingTime = Date.now();
+          } else {
+            console.warn('⚠️ Session state changed:', info);
+            this.handleSessionIssue();
+          }
+        }
+      } catch (error) {
+        console.warn('💓 Keep-alive ping failed:', error.message);
+        this.handleSessionIssue();
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    // Daily session health check
+    this.healthCheckInterval = setInterval(() => {
+      this.performSessionHealthCheck();
+    }, 24 * 60 * 60 * 1000); // 24 hours
+  }
+  
+  stopSessionKeepAlive() {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
+    
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+    
+    console.log('🛑 Session keep-alive monitoring stopped');
+  }
+  
+  async performSessionHealthCheck() {
+    console.log('🏥 Performing daily session health check...');
+    
+    try {
+      if (!this.whatsappReady || !this.whatsappClient) {
+        console.log('⚠️ Session not ready - initiating recovery');
+        this.attemptReconnection();
+        return;
+      }
+      
+      // Check session age and send alerts if needed
+      const sessionAge = Date.now() - (this.lastAuthTime || 0);
+      const sessionAgeHours = sessionAge / (1000 * 60 * 60);
+      
+      // Send email alert if session is aging
+      if (sessionAgeHours >= this.sessionAlertThreshold) {
+        const timeSinceLastAlert = this.lastAlertSent ? 
+          (Date.now() - this.lastAlertSent) / (1000 * 60 * 60) : 999;
+        
+        // Only send alert once per day
+        if (timeSinceLastAlert >= 24) {
+          const alertType = sessionAgeHours > 168 ? 'CRITICAL' : 
+                           sessionAgeHours > 120 ? 'WARNING' : 'NOTICE';
+          
+          const message = `WhatsApp session is ${Math.round(sessionAgeHours)} hours old (${Math.round(sessionAgeHours/24)} days). ` +
+                         `Consider refreshing the session to prevent service interruption.`;
+          
+          await this.sendSessionAlert(alertType, message, sessionAgeHours);
+        }
+      }
+      
+      // Auto-refresh if session is very old
+      const maxSessionAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+      
+      if (sessionAge > maxSessionAge) {
+        console.log(`⚠️ Session is ${Math.round(sessionAge / (24 * 60 * 60 * 1000))} days old - refreshing`);
+        await this.refreshSession();
+      } else {
+        console.log(`✅ Session health OK (${Math.round(sessionAge / (24 * 60 * 60 * 1000))} days old)`);
+      }
+      
+      // Test basic functionality
+      await this.whatsappClient.getState();
+      console.log('✅ Session functionality test passed');
+      
+    } catch (error) {
+      console.error('❌ Session health check failed:', error.message);
+      this.handleSessionIssue();
+    }
+  }
+  
+  async refreshSession() {
+    console.log('🔄 Refreshing WhatsApp session...');
+    
+    try {
+      // Gracefully restart the client
+      if (this.whatsappClient) {
+        await this.whatsappClient.destroy();
+      }
+      
+      this.whatsappReady = false;
+      
+      // Wait a bit before reinitializing
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Reinitialize with existing session
+      await this.initializeWhatsApp();
+      
+      console.log('✅ Session refreshed successfully');
+      
+      // Send recovery notification
+      await this.sendSessionAlert('RECOVERED', 'WhatsApp session has been successfully refreshed and is now active.', 0)
+        .catch(err => console.warn('⚠️ Failed to send recovery notification:', err.message));
+      
+    } catch (error) {
+      console.error('❌ Session refresh failed:', error.message);
+      this.handleSessionIssue();
+    }
+  }
+  
+  storeSessionInfo() {
+    try {
+      const sessionInfo = {
+        lastAuth: this.lastAuthTime || Date.now(),
+        timestamp: Date.now(),
+        clientInfo: this.whatsappClient?.info || null
+      };
+      
+      const fs = require('fs');
+      const path = require('path');
+      
+      const sessionInfoPath = path.join('.wwebjs_auth', 'session-info.json');
+      fs.writeFileSync(sessionInfoPath, JSON.stringify(sessionInfo, null, 2));
+      
+      console.log('💾 Session info stored successfully');
+      
+    } catch (error) {
+      console.warn('⚠️ Failed to store session info:', error.message);
+    }
+  }
+  
+  loadSessionInfo() {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      const sessionInfoPath = path.join('.wwebjs_auth', 'session-info.json');
+      
+      if (fs.existsSync(sessionInfoPath)) {
+        const sessionInfo = JSON.parse(fs.readFileSync(sessionInfoPath, 'utf8'));
+        this.lastAuthTime = sessionInfo.lastAuth;
+        console.log('📂 Previous session info loaded');
+        return sessionInfo;
+      }
+      
+    } catch (error) {
+      console.warn('⚠️ Failed to load session info:', error.message);
+    }
+    
+    return null;
+  }
+  
+  handleSessionIssue() {
+    console.log('🚨 Session issue detected - attempting recovery...');
+    
+    if (!this.reconnecting) {
+      this.attemptReconnection();
+    }
+  }
+  
+  handleSessionConflict() {
+    console.log('⚡ Session conflict detected - handling gracefully...');
+    
+    // Stop keep-alive to prevent conflicts
+    this.stopSessionKeepAlive();
+    
+    // Wait and then attempt fresh connection
+    setTimeout(() => {
+      console.log('🔄 Attempting to resolve session conflict...');
+      this.attemptReconnection();
+    }, 10000);
+  }
+
   async sendWhatsAppMessage(phoneNumber, message, pdfPath = null) {
+    // Check if WhatsApp is ready, attempt reconnection if needed
     if (!this.whatsappReady) {
-      throw new Error('WhatsApp client is not ready');
+      console.log('⚠️ WhatsApp not ready, attempting to reconnect...');
+      
+      if (!this.reconnecting) {
+        this.attemptReconnection();
+      }
+      
+      // Wait a bit for reconnection
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      if (!this.whatsappReady) {
+        throw new Error('WhatsApp client is not ready and reconnection failed');
+      }
     }
 
     try {
@@ -747,6 +1216,10 @@ class HybridInvoiceService {
     console.log('\n🛑 Stopping Hybrid Invoice Service...');
     
     try {
+      // Stop session monitoring first
+      this.stopSessionKeepAlive();
+      console.log('💓 Session monitoring stopped');
+      
       if (this.whatsappClient) {
         console.log('🛑 Stopping WhatsApp client...');
         await this.whatsappClient.destroy();
