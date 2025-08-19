@@ -183,6 +183,7 @@ class HybridInvoiceService {
         });
 
         // QR Code for authentication
+        let qrCodeShown = false;
         this.whatsappClient.on('qr', (qr) => {
           console.log('\n📱 WhatsApp Web QR Code:');
           console.log('👆 Scan this QR code with your WhatsApp mobile app');
@@ -190,6 +191,7 @@ class HybridInvoiceService {
           console.log('📷 Point your camera at this QR code:\n');
           qrcode.generate(qr, { small: true });
           console.log('\n⏳ Waiting for QR code scan...\n');
+          qrCodeShown = true; // Set flag when QR is shown
         });
 
         // Authentication events
@@ -255,16 +257,18 @@ class HybridInvoiceService {
         });
 
         // Initialize the client with timeout
-        console.log('⏰ Starting WhatsApp initialization (10 second timeout)...');
+        console.log('⏰ Starting WhatsApp initialization (30 second timeout)...');
         await Promise.race([
           this.whatsappClient.initialize(),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('WhatsApp initialization timeout')), 10000)
+            setTimeout(() => reject(new Error('WhatsApp initialization timeout')), 30000)
           )
         ]);
         
-        // Wait for ready state with timeout
-        await this.waitForWhatsAppReady(10000);
+        // Wait for ready state with extended timeout if QR code was shown
+        const readyTimeout = qrCodeShown ? 120000 : 30000; // 2 minutes for QR scan, 30s for session restore
+        console.log(`⏳ Waiting for WhatsApp ready (${readyTimeout/1000} second timeout)...`);
+        await this.waitForWhatsAppReady(readyTimeout);
         
         console.log(`✅ WhatsApp initialized successfully on attempt ${attempt}`);
         return; // Success, exit retry loop
@@ -1310,8 +1314,8 @@ class SAPConnection {
     });
   }
 
-  async makeRequest(path, method = 'GET', data = null) {
-    return new Promise((resolve, reject) => {
+  async makeRequest(path, method = 'GET', data = null, retryCount = 0) {
+    return new Promise(async (resolve, reject) => {
       const options = {
         hostname: 'b1.ativy.com',
         port: 50685,
@@ -1333,11 +1337,27 @@ class SAPConnection {
           responseBody += chunk;
         });
         
-        res.on('end', () => {
+        res.on('end', async () => {
           try {
             if (res.statusCode >= 200 && res.statusCode < 300) {
               const responseData = JSON.parse(responseBody);
               resolve(responseData);
+            } else if (res.statusCode === 401 && retryCount === 0) {
+              // Session expired, try to re-login once
+              console.log('🔄 SAP session expired, attempting to re-login...');
+              const loginSuccess = await this.login();
+              if (loginSuccess) {
+                console.log('✅ SAP re-login successful, retrying request...');
+                try {
+                  const result = await this.makeRequest(path, method, data, 1);
+                  resolve(result);
+                } catch (retryError) {
+                  reject(retryError);
+                }
+              } else {
+                console.error('❌ SAP re-login failed');
+                reject(new Error(`HTTP ${res.statusCode}: ${responseBody}`));
+              }
             } else {
               console.error(`❌ Request failed (${res.statusCode}):`, responseBody);
               reject(new Error(`HTTP ${res.statusCode}: ${responseBody}`));
