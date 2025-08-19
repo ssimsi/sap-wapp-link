@@ -10,30 +10,3 @@ downloaded-pdfs/
 # WhatsApp Session Data (exclude all session files - these are local only)
 whatsapp-session/
 whatsapp-session-backup/
-
-# Development and utility scripts
-backdate-invoices.js
-cleanup-extra-fields.js
-cleanup-sap-fields.js
-dashboard.js
-discover-sap-services.js
-email-invoice-monitor.js
-email-reporter.js
-execute-report.js
-find-series-pattern.js
-get-all-salespersons.js
-inspect-fields.js
-integrated-invoice-service.js
-investigate-boy-reports.js
-list-all-fields.js
-mark-historical-invoices.js
-service-orchestrator.js
-setup-email-monitoring.js
-setup-sap-fields.js
-simple-historical-marker.js
-simple-whatsapp-service.js
-test-caption-debug.js
-test-caption-with-browser.js
-test-invoice-15571.js
-test-pdf-attachment.js
-test-separate-messages.js
