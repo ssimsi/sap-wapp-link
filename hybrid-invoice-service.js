@@ -684,18 +684,56 @@ class HybridInvoiceService {
         const media = MessageMedia.fromFilePath(pdfPath);
         console.log(`🔍 Media object created, mimetype: ${media.mimetype}`);
         
-        // Send PDF with caption using the options parameter (THIS is what worked before)
+        // Send PDF with caption using the options parameter (with retry logic)
         console.log(`� Sending PDF with caption using options parameter...`);
-        const result = await this.whatsappClient.sendMessage(chatId, media, { caption: message });
-        console.log(`✅ PDF with caption sent successfully to ${phoneNumber}`);
-        console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+        let result = null;
+        let attempts = 0;
+        const maxRetries = 3;
+        
+        while (attempts < maxRetries) {
+          try {
+            attempts++;
+            console.log(`🔄 Attempt ${attempts}/${maxRetries} to send PDF...`);
+            result = await this.whatsappClient.sendMessage(chatId, media, { caption: message });
+            console.log(`✅ PDF with caption sent successfully to ${phoneNumber}`);
+            console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+            break; // Success, exit retry loop
+          } catch (error) {
+            console.log(`⚠️ Attempt ${attempts} failed:`, error.message);
+            if (attempts < maxRetries) {
+              console.log(`⏳ Waiting 2 seconds before retry...`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+              throw error; // Re-throw after all retries failed
+            }
+          }
+        }
         
       } else {
-        // If no PDF, just send text message
+        // If no PDF, just send text message (with retry logic)
         console.log(`📝 Sending text-only message (no PDF provided)...`);
-        const result = await this.whatsappClient.sendMessage(chatId, message);
-        console.log(`✅ Text message sent to ${phoneNumber}`);
-        console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+        let result = null;
+        let attempts = 0;
+        const maxRetries = 3;
+        
+        while (attempts < maxRetries) {
+          try {
+            attempts++;
+            console.log(`🔄 Attempt ${attempts}/${maxRetries} to send text message...`);
+            result = await this.whatsappClient.sendMessage(chatId, message);
+            console.log(`✅ Text message sent to ${phoneNumber}`);
+            console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+            break; // Success, exit retry loop
+          } catch (error) {
+            console.log(`⚠️ Attempt ${attempts} failed:`, error.message);
+            if (attempts < maxRetries) {
+              console.log(`⏳ Waiting 2 seconds before retry...`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+              throw error; // Re-throw after all retries failed
+            }
+          }
+        }
       }
 
       return true;
@@ -741,6 +779,13 @@ class HybridInvoiceService {
       for (const  invoice of newInvoices) {
         try {
           await this.processInvoiceWithEmail(invoice);
+          
+          // Add small delay between invoices to reduce load on WhatsApp Web.js
+          if (newInvoices.length > 1) {
+            console.log('⏳ Waiting 3 seconds before processing next invoice...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+          
         } catch (invoiceError) {
           console.error(`❌ Error processing invoice ${invoice.DocNum}:`, invoiceError.message);
           this.missedInvoices.push({
