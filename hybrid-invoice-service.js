@@ -165,8 +165,16 @@ class HybridInvoiceService {
               '--disable-web-security',
               '--disable-features=VizDisplayCompositor',
               '--disable-background-timer-throttling',
-              '--disable-backgrounding-occluded-windows',
               '--disable-renderer-backgrounding',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-ipc-flooding-protection',
+              '--force-color-profile=srgb',
+              '--metrics-recording-only',
+              '--no-default-browser-check',
+              '--no-experiments',
+              '--disable-extensions-except',
+              '--disable-plugins-discovery',
+              '--user-data-dir=/tmp/whatsapp-session-' + Date.now(),
               '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             ],
             executablePath: undefined, // Use default Chrome/Chromium
@@ -593,9 +601,6 @@ class HybridInvoiceService {
         clientInfo: this.whatsappClient?.info || null
       };
       
-      const fs = require('fs');
-      const path = require('path');
-      
       const sessionInfoPath = path.join('.wwebjs_auth', 'session-info.json');
       fs.writeFileSync(sessionInfoPath, JSON.stringify(sessionInfo, null, 2));
       
@@ -608,9 +613,6 @@ class HybridInvoiceService {
   
   loadSessionInfo() {
     try {
-      const fs = require('fs');
-      const path = require('path');
-      
       const sessionInfoPath = path.join('.wwebjs_auth', 'session-info.json');
       
       if (fs.existsSync(sessionInfoPath)) {
