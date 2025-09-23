@@ -45,8 +45,8 @@ class HybridInvoiceService {
   async start() {
     console.log('🚀 Starting Hybrid Invoice Service (SAP + WhatsApp)');
     console.log('==================================================');
-    console.log('📧 PDF downloads handled by separate PDF Download Service');
-    console.log('🔄 This service processes invoices from downloaded-pdfs folder');
+    console.log('� PDF processing handled by FC folder with proper SAP document naming');
+    console.log('🔄 This service processes invoices from FC folder');
     console.log('==================================================');
     
     // Show test mode status prominently
@@ -95,7 +95,7 @@ class HybridInvoiceService {
       // Start monitoring
       this.isRunning = true;
       console.log('\n✅ Hybrid service started successfully!');
-      console.log('🔄 Now processing SAP invoices with PDFs from downloaded-pdfs folder...');
+      console.log('🔄 Now processing SAP invoices with PDFs from FC folder...');
       console.log('📋 Make sure PDF Download Service is running separately for X:40 downloads!');
       
       // Schedule invoice processing every hour at X:50
@@ -919,18 +919,18 @@ class HybridInvoiceService {
   }
 
   async findInvoicePDF(docNum, invoiceDate, series) {
-    console.log(`   🔍 Searching downloaded PDFs folder ONLY for DocNum: ${docNum}`);
+    console.log(`   🔍 Searching FC folder for DocNum: ${docNum}`);
     console.log(`   📅 Invoice date: ${invoiceDate}, Series: ${series}`);
     
     try {
-      // ONLY search in downloaded folder - NO EMAIL SEARCH!
+      // Search in FC folder with proper SAP document naming
       const localPdfPath = await this.findPDFInDownloadedFolder(docNum, series);
       if (localPdfPath) {
-        console.log(`   ✅ Found PDF in downloaded folder: ${localPdfPath}`);
+        console.log(`   ✅ Found PDF in FC folder: ${localPdfPath}`);
         return localPdfPath;
       }
       
-      console.log(`   ❌ PDF not found in downloaded folder for DocNum ${docNum}`);
+      console.log(`   ❌ PDF not found in FC folder for DocNum ${docNum}`);
       return null;
       
     } catch (error) {
@@ -940,66 +940,42 @@ class HybridInvoiceService {
   }
 
   async findPDFInDownloadedFolder(docNum, series) {
-    const downloadedPdfFolder = './downloaded-pdfs';
+    const fcFolder = './FC';
     
     try {
-      // Check if downloaded-pdfs folder exists
-      if (!fs.existsSync(downloadedPdfFolder)) {
-        console.log(`   📁 Downloaded PDFs folder does not exist: ${downloadedPdfFolder}`);
+      // Check if FC folder exists
+      if (!fs.existsSync(fcFolder)) {
+        console.log(`   📁 FC folder does not exist: ${fcFolder}`);
         return null;
       }
       
-      // Get all PDF files in the folder
-      const files = fs.readdirSync(downloadedPdfFolder);
+      // Get all PDF files in the FC folder
+      const files = fs.readdirSync(fcFolder);
       const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
       
-      console.log(`   📄 Searching through ${pdfFiles.length} downloaded PDFs for DocNum ${docNum}`);
+      console.log(`   📄 Searching through ${pdfFiles.length} PDFs in FC folder for DocNum ${docNum}`);
       
-      // Search for PDF containing the DocNum in filename
+      // Search for PDF with the correct naming convention
+      // Look for: Factura_de_deudores_[docNum].pdf
+      const expectedFileName = `Factura_de_deudores_${docNum}.pdf`;
+      
       for (const pdfFile of pdfFiles) {
-        // Extract the original filename from timestamped filename
-        // Format: "2025-08-15T14-30-00-123Z_original-filename.pdf"
-        const originalName = pdfFile.includes('_') ? pdfFile.split('_').slice(1).join('_') : pdfFile;
+        console.log(`     🔍 Checking: ${pdfFile} for DocNum ${docNum}`);
         
-        console.log(`     🔍 Checking: ${originalName} for DocNum ${docNum}`);
-        
-        if (originalName.includes(docNum)) {
-          const fullPath = path.join(downloadedPdfFolder, pdfFile);
-          console.log(`     ✅ MATCH FOUND! PDF ${originalName} contains DocNum ${docNum}`);
+        if (pdfFile === expectedFileName) {
+          const fullPath = path.join(fcFolder, pdfFile);
+          console.log(`     ✅ EXACT MATCH FOUND! PDF ${pdfFile} matches DocNum ${docNum}`);
+          console.log(`     📄 Using PDF directly from FC folder: ${fullPath}`);
           
-          // Copy to temp-pdfs folder with proper naming for the hybrid service
-          const tempPdfFolder = './temp-pdfs';
-          if (!fs.existsSync(tempPdfFolder)) {
-            fs.mkdirSync(tempPdfFolder, { recursive: true });
-          }
-          
-          // Generate final filename based on series
-          let finalFileName;
-          const isSeries76 = docNum.length === 7 && docNum.startsWith('9');
-          
-          if (isSeries76) {
-            finalFileName = `Comprobante_${docNum}.pdf`;
-            console.log(`     🎯 Series 76 detected - renaming to: ${finalFileName}`);
-          } else {
-            finalFileName = originalName;
-            console.log(`     📋 Series 4 detected - keeping original name: ${finalFileName}`);
-          }
-          
-          const finalPath = path.join(tempPdfFolder, finalFileName);
-          
-          // Copy the file to temp folder
-          fs.copyFileSync(fullPath, finalPath);
-          console.log(`     💾 Copied PDF to: ${finalPath}`);
-          
-          return finalPath;
+          return fullPath;
         }
       }
       
-      console.log(`   ❌ No downloaded PDF found with DocNum ${docNum}`);
+      console.log(`   ❌ No PDF found in FC folder with exact name: ${expectedFileName}`);
       return null;
       
     } catch (error) {
-      console.error(`❌ Error searching downloaded PDFs folder:`, error.message);
+      console.error(`❌ Error searching FC folder:`, error.message);
       return null;
     }
   }

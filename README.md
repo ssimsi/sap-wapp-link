@@ -1,4 +1,13 @@
-# SAP WhatsApp Invoice Automation System
+# SAP## Features
+- 📧 **Email Integration**: Monitors SAP emails with invoice PDFs
+- 📱 **WhatsApp Automation**: Sends PDFs with captions as single messages
+- 🕐 **Scheduled Processing**: Hourly checks at X:50 for optimal workflow
+- 📄 **PDF Management**: Downloads and organizes invoice PDFs with proper SAP document numbers
+- 🎯 **Smart Matching**: Links SAP invoices with downloaded PDFs
+- 🛡️ **Safety Controls**: No PDF = No message policy
+- 📊 **Delivery Tracking**: SAP field updates prevent duplicates
+- 🧹 **Auto Cleanup**: Removes old PDFs after 2 days
+- 📝 **PDF Renaming**: Automatically extracts and uses correct SAP document numbers from PDF content Invoice Automation System
 
 ## Overview
 This automated system connects SAP Business One to WhatsApp for seamless invoice delivery. It processes emails from SAP, downloads PDFs, and sends WhatsApp notifications to salespersons with invoice attachments.
@@ -61,6 +70,9 @@ npm run test
 
 # Start development mode
 npm run dev
+
+# Rename PDFs with correct document numbers
+node rename-invoice-pdfs.cjs
 ```
 
 ### Automatic Operation
@@ -113,8 +125,19 @@ SAP B1 Email → PDF Download → SAP Processing → WhatsApp Delivery
 - Prevents storage bloat
 - Runs daily at 05:00
 
+### 4. PDF Document Renamer (`rename-invoice-pdfs.cjs`)
+- Extracts correct SAP document numbers from PDF content
+- Renames files with proper format: `Factura_de_deudores_[NUMBER].pdf` and `Entrega_[NUMBER].pdf`
+- Filters out emission points (00060, 99999) to get actual document numbers
+- Automatically deletes original timestamp-named files after renaming
+- Removes any other non-standard PDF files from the directory
+- Supports both "Factura de deudores" (invoices) and "Entrega" (deliveries)
+- Run manually: `node rename-invoice-pdfs.cjs`
+
 ## Recent Fixes
 - ✅ **Fixed PDF Caption Issue**: PDFs now send with text captions as single messages
 - ✅ **Simplified WhatsApp Function**: Removed complex async logic causing timing issues
 - ✅ **Sequential Processing**: Uses `{caption: message}` options parameter approach
 - ✅ **Hourly Schedule**: Changed from every 5 minutes to X:50 hourly for optimal workflow
+- ✅ **PDF Naming System**: Added automatic PDF renaming with correct SAP document numbers
+- ✅ **File Cleanup**: Automated removal of old timestamp files and non-standard PDFs

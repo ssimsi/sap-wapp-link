@@ -1,0 +1,851 @@
+{
+  "renaming": [
+    {
+      "originalFile": "Entrega_00007598.pdf",
+      "newFile": "Entrega_00007598.pdf",
+      "documentNumber": "00007598",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00007802.pdf",
+      "newFile": "Entrega_00007802.pdf",
+      "documentNumber": "00007802",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00007951.pdf",
+      "newFile": "Entrega_00007951.pdf",
+      "documentNumber": "00007951",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00007960.pdf",
+      "newFile": "Entrega_00007960.pdf",
+      "documentNumber": "00007960",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008055.pdf",
+      "newFile": "Entrega_00008055.pdf",
+      "documentNumber": "00008055",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008056.pdf",
+      "newFile": "Entrega_00008056.pdf",
+      "documentNumber": "00008056",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008057.pdf",
+      "newFile": "Entrega_00008057.pdf",
+      "documentNumber": "00008057",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008058.pdf",
+      "newFile": "Entrega_00008058.pdf",
+      "documentNumber": "00008058",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008059.pdf",
+      "newFile": "Entrega_00008059.pdf",
+      "documentNumber": "00008059",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008063.pdf",
+      "newFile": "Entrega_00008063.pdf",
+      "documentNumber": "00008063",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008066.pdf",
+      "newFile": "Entrega_00008066.pdf",
+      "documentNumber": "00008066",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008071.pdf",
+      "newFile": "Entrega_00008071.pdf",
+      "documentNumber": "00008071",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008072.pdf",
+      "newFile": "Entrega_00008072.pdf",
+      "documentNumber": "00008072",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00008073.pdf",
+      "newFile": "Entrega_00008073.pdf",
+      "documentNumber": "00008073",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00152533.pdf",
+      "newFile": "Entrega_00152533.pdf",
+      "documentNumber": "00152533",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00152611.pdf",
+      "newFile": "Entrega_00152611.pdf",
+      "documentNumber": "00152611",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00152625.pdf",
+      "newFile": "Entrega_00152625.pdf",
+      "documentNumber": "00152625",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00152978.pdf",
+      "newFile": "Entrega_00152978.pdf",
+      "documentNumber": "00152978",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153284.pdf",
+      "newFile": "Entrega_00153284.pdf",
+      "documentNumber": "00153284",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153311.pdf",
+      "newFile": "Entrega_00153311.pdf",
+      "documentNumber": "00153311",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153337.pdf",
+      "newFile": "Entrega_00153337.pdf",
+      "documentNumber": "00153337",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153338.pdf",
+      "newFile": "Entrega_00153338.pdf",
+      "documentNumber": "00153338",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153339.pdf",
+      "newFile": "Entrega_00153339.pdf",
+      "documentNumber": "00153339",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153340.pdf",
+      "newFile": "Entrega_00153340.pdf",
+      "documentNumber": "00153340",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153341.pdf",
+      "newFile": "Entrega_00153341.pdf",
+      "documentNumber": "00153341",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153342.pdf",
+      "newFile": "Entrega_00153342.pdf",
+      "documentNumber": "00153342",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153343.pdf",
+      "newFile": "Entrega_00153343.pdf",
+      "documentNumber": "00153343",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153344.pdf",
+      "newFile": "Entrega_00153344.pdf",
+      "documentNumber": "00153344",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153345.pdf",
+      "newFile": "Entrega_00153345.pdf",
+      "documentNumber": "00153345",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153346.pdf",
+      "newFile": "Entrega_00153346.pdf",
+      "documentNumber": "00153346",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153347.pdf",
+      "newFile": "Entrega_00153347.pdf",
+      "documentNumber": "00153347",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153348.pdf",
+      "newFile": "Entrega_00153348.pdf",
+      "documentNumber": "00153348",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153350.pdf",
+      "newFile": "Entrega_00153350.pdf",
+      "documentNumber": "00153350",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153352.pdf",
+      "newFile": "Entrega_00153352.pdf",
+      "documentNumber": "00153352",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153353.pdf",
+      "newFile": "Entrega_00153353.pdf",
+      "documentNumber": "00153353",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153354.pdf",
+      "newFile": "Entrega_00153354.pdf",
+      "documentNumber": "00153354",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153355.pdf",
+      "newFile": "Entrega_00153355.pdf",
+      "documentNumber": "00153355",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153356.pdf",
+      "newFile": "Entrega_00153356.pdf",
+      "documentNumber": "00153356",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153357.pdf",
+      "newFile": "Entrega_00153357.pdf",
+      "documentNumber": "00153357",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153358.pdf",
+      "newFile": "Entrega_00153358.pdf",
+      "documentNumber": "00153358",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153359.pdf",
+      "newFile": "Entrega_00153359.pdf",
+      "documentNumber": "00153359",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153360.pdf",
+      "newFile": "Entrega_00153360.pdf",
+      "documentNumber": "00153360",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153361.pdf",
+      "newFile": "Entrega_00153361.pdf",
+      "documentNumber": "00153361",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153362.pdf",
+      "newFile": "Entrega_00153362.pdf",
+      "documentNumber": "00153362",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153363.pdf",
+      "newFile": "Entrega_00153363.pdf",
+      "documentNumber": "00153363",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153364.pdf",
+      "newFile": "Entrega_00153364.pdf",
+      "documentNumber": "00153364",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153365.pdf",
+      "newFile": "Entrega_00153365.pdf",
+      "documentNumber": "00153365",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153366.pdf",
+      "newFile": "Entrega_00153366.pdf",
+      "documentNumber": "00153366",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153367.pdf",
+      "newFile": "Entrega_00153367.pdf",
+      "documentNumber": "00153367",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153368.pdf",
+      "newFile": "Entrega_00153368.pdf",
+      "documentNumber": "00153368",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153369.pdf",
+      "newFile": "Entrega_00153369.pdf",
+      "documentNumber": "00153369",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153372.pdf",
+      "newFile": "Entrega_00153372.pdf",
+      "documentNumber": "00153372",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153373.pdf",
+      "newFile": "Entrega_00153373.pdf",
+      "documentNumber": "00153373",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153374.pdf",
+      "newFile": "Entrega_00153374.pdf",
+      "documentNumber": "00153374",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153377.pdf",
+      "newFile": "Entrega_00153377.pdf",
+      "documentNumber": "00153377",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153378.pdf",
+      "newFile": "Entrega_00153378.pdf",
+      "documentNumber": "00153378",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Entrega_00153379.pdf",
+      "newFile": "Entrega_00153379.pdf",
+      "documentNumber": "00153379",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00013963.pdf",
+      "newFile": "Factura_de_deudores_00013963.pdf",
+      "documentNumber": "00013963",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014015.pdf",
+      "newFile": "Factura_de_deudores_00014015.pdf",
+      "documentNumber": "00014015",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014096.pdf",
+      "newFile": "Factura_de_deudores_00014096.pdf",
+      "documentNumber": "00014096",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014107.pdf",
+      "newFile": "Factura_de_deudores_00014107.pdf",
+      "documentNumber": "00014107",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014603.pdf",
+      "newFile": "Factura_de_deudores_00014603.pdf",
+      "documentNumber": "00014603",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014798.pdf",
+      "newFile": "Factura_de_deudores_00014798.pdf",
+      "documentNumber": "00014798",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014808.pdf",
+      "newFile": "Factura_de_deudores_00014808.pdf",
+      "documentNumber": "00014808",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014844.pdf",
+      "newFile": "Factura_de_deudores_00014844.pdf",
+      "documentNumber": "00014844",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014845.pdf",
+      "newFile": "Factura_de_deudores_00014845.pdf",
+      "documentNumber": "00014845",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014847.pdf",
+      "newFile": "Factura_de_deudores_00014847.pdf",
+      "documentNumber": "00014847",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014848.pdf",
+      "newFile": "Factura_de_deudores_00014848.pdf",
+      "documentNumber": "00014848",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014850.pdf",
+      "newFile": "Factura_de_deudores_00014850.pdf",
+      "documentNumber": "00014850",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014851.pdf",
+      "newFile": "Factura_de_deudores_00014851.pdf",
+      "documentNumber": "00014851",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014852.pdf",
+      "newFile": "Factura_de_deudores_00014852.pdf",
+      "documentNumber": "00014852",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014853.pdf",
+      "newFile": "Factura_de_deudores_00014853.pdf",
+      "documentNumber": "00014853",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014854.pdf",
+      "newFile": "Factura_de_deudores_00014854.pdf",
+      "documentNumber": "00014854",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014855.pdf",
+      "newFile": "Factura_de_deudores_00014855.pdf",
+      "documentNumber": "00014855",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014857.pdf",
+      "newFile": "Factura_de_deudores_00014857.pdf",
+      "documentNumber": "00014857",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014858.pdf",
+      "newFile": "Factura_de_deudores_00014858.pdf",
+      "documentNumber": "00014858",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014859.pdf",
+      "newFile": "Factura_de_deudores_00014859.pdf",
+      "documentNumber": "00014859",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014860.pdf",
+      "newFile": "Factura_de_deudores_00014860.pdf",
+      "documentNumber": "00014860",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014861.pdf",
+      "newFile": "Factura_de_deudores_00014861.pdf",
+      "documentNumber": "00014861",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014862.pdf",
+      "newFile": "Factura_de_deudores_00014862.pdf",
+      "documentNumber": "00014862",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014863.pdf",
+      "newFile": "Factura_de_deudores_00014863.pdf",
+      "documentNumber": "00014863",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014864.pdf",
+      "newFile": "Factura_de_deudores_00014864.pdf",
+      "documentNumber": "00014864",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014865.pdf",
+      "newFile": "Factura_de_deudores_00014865.pdf",
+      "documentNumber": "00014865",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014866.pdf",
+      "newFile": "Factura_de_deudores_00014866.pdf",
+      "documentNumber": "00014866",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014867.pdf",
+      "newFile": "Factura_de_deudores_00014867.pdf",
+      "documentNumber": "00014867",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014869.pdf",
+      "newFile": "Factura_de_deudores_00014869.pdf",
+      "documentNumber": "00014869",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014870.pdf",
+      "newFile": "Factura_de_deudores_00014870.pdf",
+      "documentNumber": "00014870",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014871.pdf",
+      "newFile": "Factura_de_deudores_00014871.pdf",
+      "documentNumber": "00014871",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014872.pdf",
+      "newFile": "Factura_de_deudores_00014872.pdf",
+      "documentNumber": "00014872",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014873.pdf",
+      "newFile": "Factura_de_deudores_00014873.pdf",
+      "documentNumber": "00014873",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014874.pdf",
+      "newFile": "Factura_de_deudores_00014874.pdf",
+      "documentNumber": "00014874",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014875.pdf",
+      "newFile": "Factura_de_deudores_00014875.pdf",
+      "documentNumber": "00014875",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014876.pdf",
+      "newFile": "Factura_de_deudores_00014876.pdf",
+      "documentNumber": "00014876",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014877.pdf",
+      "newFile": "Factura_de_deudores_00014877.pdf",
+      "documentNumber": "00014877",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014878.pdf",
+      "newFile": "Factura_de_deudores_00014878.pdf",
+      "documentNumber": "00014878",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014879.pdf",
+      "newFile": "Factura_de_deudores_00014879.pdf",
+      "documentNumber": "00014879",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014882.pdf",
+      "newFile": "Factura_de_deudores_00014882.pdf",
+      "documentNumber": "00014882",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014883.pdf",
+      "newFile": "Factura_de_deudores_00014883.pdf",
+      "documentNumber": "00014883",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014884.pdf",
+      "newFile": "Factura_de_deudores_00014884.pdf",
+      "documentNumber": "00014884",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014885.pdf",
+      "newFile": "Factura_de_deudores_00014885.pdf",
+      "documentNumber": "00014885",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00014886.pdf",
+      "newFile": "Factura_de_deudores_00014886.pdf",
+      "documentNumber": "00014886",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00153352.pdf",
+      "newFile": "Factura_de_deudores_00014851.pdf",
+      "documentNumber": "00014851",
+      "renamed": false,
+      "status": "target_exists"
+    },
+    {
+      "originalFile": "Factura_de_deudores_00153360.pdf",
+      "newFile": "Factura_de_deudores_00014864.pdf",
+      "documentNumber": "00014864",
+      "renamed": false,
+      "status": "target_exists"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90062581.pdf",
+      "newFile": "Factura_de_deudores_90062581.pdf",
+      "documentNumber": "90062581",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90062795.pdf",
+      "newFile": "Factura_de_deudores_90062795.pdf",
+      "documentNumber": "90062795",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90062944.pdf",
+      "newFile": "Factura_de_deudores_90062944.pdf",
+      "documentNumber": "90062944",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90062989.pdf",
+      "newFile": "Factura_de_deudores_90062989.pdf",
+      "documentNumber": "90062989",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063071.pdf",
+      "newFile": "Factura_de_deudores_90063071.pdf",
+      "documentNumber": "90063071",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063072.pdf",
+      "newFile": "Factura_de_deudores_90063072.pdf",
+      "documentNumber": "90063072",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063073.pdf",
+      "newFile": "Factura_de_deudores_90063073.pdf",
+      "documentNumber": "90063073",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063075.pdf",
+      "newFile": "Factura_de_deudores_90063075.pdf",
+      "documentNumber": "90063075",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063076.pdf",
+      "newFile": "Factura_de_deudores_90063076.pdf",
+      "documentNumber": "90063076",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063077.pdf",
+      "newFile": "Factura_de_deudores_90063077.pdf",
+      "documentNumber": "90063077",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063083.pdf",
+      "newFile": "Factura_de_deudores_90063083.pdf",
+      "documentNumber": "90063083",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063087.pdf",
+      "newFile": "Factura_de_deudores_90063087.pdf",
+      "documentNumber": "90063087",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063088.pdf",
+      "newFile": "Factura_de_deudores_90063088.pdf",
+      "documentNumber": "90063088",
+      "renamed": false,
+      "status": "already_correct"
+    },
+    {
+      "originalFile": "Factura_de_deudores_90063089.pdf",
+      "newFile": "Factura_de_deudores_90063089.pdf",
+      "documentNumber": "90063089",
+      "renamed": false,
+      "status": "already_correct"
+    }
+  ],
+  "cleanup": {
+    "deleted": [
+      "Lista de partidas abiertas_20250922_120757.pdf",
+      "Pagos recibidos_20250922_103108.pdf",
+      "Pagos recibidos_20250922_104412.pdf",
+      "Pagos recibidos_20250922_124325.pdf",
+      "Pagos recibidos_20250922_171008.pdf",
+      "Pagos recibidos_20250922_171625.pdf",
+      "Pagos recibidos_20250922_172556.pdf",
+      "Pagos recibidos_20250922_173050.pdf",
+      "Pagos recibidos_20250922_175917.pdf",
+      "Pagos recibidos_20250922_180701.pdf",
+      "Pagos recibidos_20250922_180945.pdf",
+      "Pagos recibidos_20250922_182300.pdf",
+      "Pagos recibidos_20250922_182620.pdf",
+      "Saldo de cuenta - C0011628 INDUTRAB S.R.L_20250922_124828.pdf",
+      "Saldo de cuenta - C007094 LEON LEVI E HIJOS SRL_20250922_115001.pdf",
+      "Saldo de cuenta - C007094 LEON LEVI E HIJOS SRL_20250922_120610.pdf",
+      "Saldo de cuenta - C008983 COMPAÑIA TEXTIL RODAS S.A._20250922_124853.pdf",
+      "Saldo de cuenta - C008998 SILBERMAN ENRIQUE RAFAEL_20250922_163541.pdf",
+      "Saldo de cuenta - C009435 DEVALI FEDERICO AGUSTIN Y DEVALI LUCAS MARTIN_20250922_115846.pdf",
+      "Saldo de cuenta - C011444 TIENDA DE LONAS  PLASTICOS Y AFINES S.R.L_20250922_122024.pdf",
+      "Saldo de cuenta - C011505 LONETUC S.A.S_20250922_121907.pdf",
+      "Saldo de cuenta - C020153 TAWIL MARTIN ISAAC_20250922_110531.pdf"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-09-23T18:36:10.447Z"
+}
