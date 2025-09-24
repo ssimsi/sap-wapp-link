@@ -496,22 +496,45 @@ class EmailService {
     try {
       console.log(`🔍 Querying SAP for unsent email invoices between ${fromDate} and ${toDate}...`);
       
-      // Query for invoices where U_EmailSent is not 'Y' AND DocDate is between fromDate and toDate
-      // Use $top=1000 to get more results and avoid pagination issues
-      const response = await this.sapConnection.get(`/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry,NumAtCard,Comments&$orderby=DocDate desc&$top=1000`);
+      let allInvoices = [];
+      let url = `/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry,NumAtCard,Comments&$orderby=DocDate desc`;
       
-      if (response.data && response.data.value && response.data.value.length > 0) {
-        console.log(`✅ Found ${response.data.value.length} unsent invoices in SAP between ${fromDate} and ${toDate}`);
+      // Paginate through all results using $skip
+      let skip = 0;
+      const pageSize = 20; // SAP B1 default page size
+      
+      while (true) {
+        const paginatedUrl = `${url}&$skip=${skip}&$top=${pageSize}`;
+        console.log(`🔍 Fetching page ${Math.floor(skip / pageSize) + 1} (skip ${skip})...`);
+        
+        const response = await this.sapConnection.get(paginatedUrl);
+        
+        if (response.data && response.data.value && response.data.value.length > 0) {
+          allInvoices.push(...response.data.value);
+          
+          // If we got fewer results than page size, we've reached the end
+          if (response.data.value.length < pageSize) {
+            break;
+          }
+          
+          skip += pageSize;
+        } else {
+          break;
+        }
+      }
+      
+      if (allInvoices.length > 0) {
+        console.log(`✅ Found ${allInvoices.length} unsent invoices in SAP between ${fromDate} and ${toDate} (across ${Math.ceil(allInvoices.length / pageSize)} pages)`);
         
         // Log the date range of found invoices
-        const dates = response.data.value.map(inv => inv.DocDate).filter(Boolean);
+        const dates = allInvoices.map(inv => inv.DocDate).filter(Boolean);
         if (dates.length > 0) {
           const minDate = Math.min(...dates.map(d => new Date(d)));
           const maxDate = Math.max(...dates.map(d => new Date(d)));
           console.log(`📅 Invoice date range: ${new Date(minDate).toISOString().split('T')[0]} to ${new Date(maxDate).toISOString().split('T')[0]}`);
         }
         
-        return response.data.value;
+        return allInvoices;
       } else {
         console.log(`📭 No unsent invoices found in SAP between ${fromDate} and ${toDate}`);
         return [];
