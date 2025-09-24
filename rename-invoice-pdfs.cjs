@@ -20,7 +20,7 @@ const path = require('path');
 const pdf = require('pdf-parse');
 
 // Directory containing the PDF files
-const fcDir = './FC';
+const fcDir = './downloaded-pdfs/ORIGINALS';
 
 async function extractDocumentNumberFromPDF(pdfPath) {
     try {
