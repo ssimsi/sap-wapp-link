@@ -199,6 +199,7 @@ class EmailService {
           total: invoice.DocTotal,
           customerCode: invoice.CardCode,
           customerName: invoice.CardName,
+          customerReference: invoice.NumAtCard,
           emailSent: invoice.U_EmailSent,
           series: invoice.Series,
           salesPersonCode: invoice.SalesPersonCode,
@@ -293,22 +294,25 @@ class EmailService {
   }
 
   getEmailContent(invoiceData) {
+    // Use customer reference or fallback to invoice number
+    const customerRef = invoiceData.customerReference || invoiceData.invoiceNumber;
+    
     // Different email content based on series
     if (invoiceData.series === 76) {
       return {
-        subject: `Comprobante ${invoiceData.invoiceNumber} - Simsiroglu`,
+        subject: `Su comprobante ref. ${customerRef} en Simsiroglu`,
         headerTitle: 'Comprobante electrónico emitido',
         greeting: `Estimado/a <strong>${invoiceData.customerName}</strong>,`,
-        bodyText: 'Adjuntamos su comprobante de uso interno correspondiente:',
+        bodyText: `Adjuntamos su comprobante correspondiente a su operación ref. <strong>${customerRef}</strong>:`,
         numberLabel: 'Número de Comprobante:'
       };
     } else {
       // Default for series 4 and others
       return {
-        subject: `Factura ${invoiceData.invoiceNumber} - Simsiroglu`,
+        subject: `Su factura de compra ref. ${customerRef} en Simsiroglu`,
         headerTitle: 'Factura Electrónica',
         greeting: `Estimado/a <strong>${invoiceData.customerName}</strong>,`,
-        bodyText: 'Adjuntamos su factura correspondiente:',
+        bodyText: `Adjuntamos su factura correspondiente a su compra ref. <strong>${customerRef}</strong>:`,
         numberLabel: 'Número de Factura:'
       };
     }
@@ -366,6 +370,10 @@ class EmailService {
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>${emailContent.numberLabel}</strong></td>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoiceData.invoiceNumber}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Referencia del Cliente:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoiceData.customerReference || invoiceData.invoiceNumber}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Fecha:</strong></td>
@@ -490,7 +498,7 @@ class EmailService {
       
       // Query for invoices where U_EmailSent is not 'Y' AND DocDate is between fromDate and toDate
       // Use $top=1000 to get more results and avoid pagination issues
-      const response = await this.sapConnection.get(`/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry&$orderby=DocDate desc&$top=1000`);
+      const response = await this.sapConnection.get(`/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry,NumAtCard,Comments&$orderby=DocDate desc&$top=1000`);
       
       if (response.data && response.data.value && response.data.value.length > 0) {
         console.log(`✅ Found ${response.data.value.length} unsent invoices in SAP between ${fromDate} and ${toDate}`);
@@ -516,20 +524,29 @@ class EmailService {
 
   async findPDFForInvoice(folioNumber) {
     try {
-      // Look for PDF with the format: Factura_de_deudores_[NUMBER].pdf
-      const expectedFilename = `Factura_de_deudores_${folioNumber}.pdf`;
-      const pdfPath = path.join(this.downloadsFolder, expectedFilename);
+      // Try different zero-padding patterns for PDF filename
+      const patterns = [
+        `Factura_de_deudores_${folioNumber}.pdf`,           // No padding: 14936
+        `Factura_de_deudores_0${folioNumber}.pdf`,          // 1 zero: 014936  
+        `Factura_de_deudores_00${folioNumber}.pdf`,         // 2 zeros: 0014936
+        `Factura_de_deudores_000${folioNumber}.pdf`,        // 3 zeros: 00014936
+        `Factura_de_deudores_0000${folioNumber}.pdf`,       // 4 zeros: 000014936
+        `Factura_de_deudores_00000${folioNumber}.pdf`       // 5 zeros: 0000014936
+      ];
       
-      if (fs.existsSync(pdfPath)) {
-        console.log(`✅ Found PDF for invoice ${folioNumber}: ${expectedFilename}`);
-        return {
-          filename: expectedFilename,
-          fullPath: pdfPath
-        };
-      } else {
-        console.log(`❌ PDF not found for invoice ${folioNumber} (expected: ${expectedFilename})`);
-        return null;
+      for (const filename of patterns) {
+        const pdfPath = path.join(this.downloadsFolder, filename);
+        if (fs.existsSync(pdfPath)) {
+          console.log(`✅ Found PDF for invoice ${folioNumber}: ${filename}`);
+          return {
+            filename: filename,
+            fullPath: pdfPath
+          };
+        }
       }
+      
+      console.log(`❌ PDF not found for invoice ${folioNumber} (tried multiple zero-padding patterns)`);
+      return null;
     } catch (error) {
       console.error(`❌ Error looking for PDF for invoice ${folioNumber}:`, error.message);
       return null;
@@ -586,6 +603,7 @@ class EmailService {
             total: invoice.DocTotal,
             customerCode: invoice.CardCode,
             customerName: invoice.CardName,
+            customerReference: invoice.NumAtCard,
             emailSent: invoice.U_EmailSent,
             series: invoice.Series,
             salesPersonCode: invoice.SalesPersonCode,
