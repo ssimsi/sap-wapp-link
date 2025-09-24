@@ -19,8 +19,10 @@ const fs = require('fs');
 const path = require('path');
 const pdf = require('pdf-parse');
 
-// Directory containing the PDF files
-const fcDir = './downloaded-pdfs/ORIGINALS';
+// Directory containing the PDF files (source)
+const originalsDir = './downloaded-pdfs/ORIGINALS';
+// Directory where renamed files will be moved (destination)
+const downloadedDir = './downloaded-pdfs';
 
 async function extractDocumentNumberFromPDF(pdfPath) {
     try {
@@ -61,34 +63,35 @@ async function extractDocumentNumberFromPDF(pdfPath) {
 
 async function cleanupUnwantedFiles() {
     try {
-        const files = fs.readdirSync(fcDir);
+        const files = fs.readdirSync(originalsDir);
         
-        // Find files that should be deleted:
-        // 1. Files that don't start with "Factura_de_deudores_" or "Entrega_" 
-        // 2. Old timestamp-named files
+        // Find files that should be deleted from ORIGINALS after processing:
+        // 1. Files that don't start with "Factura de deudores" or "Entrega" 
+        // 2. Successfully processed timestamp-named files
         const filesToDelete = files.filter(file => {
             if (!file.endsWith('.pdf')) return false;
             
-            // Keep correctly named files
-            if (file.startsWith('Factura_de_deudores_') || file.startsWith('Entrega_')) {
-                return false;
+            // Keep files that haven't been processed yet
+            if (file.startsWith('Factura de deudores_') || file.startsWith('Entrega_')) {
+                return true; // These will be deleted after successful processing
             }
             
-            // Delete everything else
+            // Delete non-invoice/delivery files
             return true;
         });
         
-        console.log(`Found ${filesToDelete.length} files to delete\n`);
+        console.log(`Found ${filesToDelete.length} files to clean up from ORIGINALS\n`);
         
         const deleted = [];
         const errors = [];
         
+        // Only delete files that were successfully processed
         for (const filename of filesToDelete) {
-            const filePath = path.join(fcDir, filename);
+            const filePath = path.join(originalsDir, filename);
             
             try {
                 fs.unlinkSync(filePath);
-                console.log(`🗑️  Deleted: ${filename}`);
+                console.log(`🗑️  Deleted from ORIGINALS: ${filename}`);
                 deleted.push(filename);
             } catch (error) {
                 console.log(`❌ Error deleting ${filename}: ${error.message}`);
@@ -106,35 +109,33 @@ async function cleanupUnwantedFiles() {
 
 async function renameDocumentPDFs() {
     try {
-        const files = fs.readdirSync(fcDir);
+        const files = fs.readdirSync(originalsDir);
         
-        // Step 1: Find document PDFs to process (both original and already renamed)
+        // Step 1: Find document PDFs to process from ORIGINALS folder
         const documentPDFs = files.filter(file => 
             (
                 file.startsWith('Factura de deudores_') || 
-                file.startsWith('Factura_de_deudores_') ||
-                file.startsWith('Entrega_') ||
-                file.startsWith('Entrega_de_')
+                file.startsWith('Entrega_')
             ) && file.endsWith('.pdf')
         );
         
-        console.log(`Found ${documentPDFs.length} document PDFs to process (invoices and deliveries)\n`);
+        console.log(`Found ${documentPDFs.length} document PDFs to process from ORIGINALS folder\n`);
         
         const results = [];
         const processedFiles = new Set(); // Track files we've processed
         
         for (let i = 0; i < documentPDFs.length; i++) {
             const filename = documentPDFs[i];
-            const filePath = path.join(fcDir, filename);
+            const sourceFilePath = path.join(originalsDir, filename);
             
             console.log(`Processing ${i + 1}/${documentPDFs.length}: ${filename}`);
             
-            const correctDocumentNumber = await extractDocumentNumberFromPDF(filePath);
+            const correctDocumentNumber = await extractDocumentNumberFromPDF(sourceFilePath);
             
             if (correctDocumentNumber) {
                 // Determine the correct prefix based on file type
                 let expectedFilename;
-                if (filename.startsWith('Factura')) {
+                if (filename.startsWith('Factura de deudores')) {
                     expectedFilename = `Factura_de_deudores_${correctDocumentNumber}.pdf`;
                 } else if (filename.startsWith('Entrega')) {
                     expectedFilename = `Entrega_${correctDocumentNumber}.pdf`;
@@ -143,53 +144,39 @@ async function renameDocumentPDFs() {
                     continue;
                 }
                 
-                if (filename === expectedFilename) {
-                    console.log(`✓ Already correctly named: ${filename}`);
+                // Target path in downloaded-pdfs folder
+                const targetPath = path.join(downloadedDir, expectedFilename);
+                
+                // Check if target filename already exists in downloaded-pdfs
+                if (fs.existsSync(targetPath)) {
+                    console.log(`⚠️  Target file already exists in downloaded-pdfs: ${expectedFilename}`);
+                    // Still mark original for deletion since it's processed
+                    processedFiles.add(filename);
                     results.push({
                         originalFile: filename,
-                        newFile: filename,
+                        newFile: expectedFilename,
                         documentNumber: correctDocumentNumber,
                         renamed: false,
-                        status: 'already_correct'
+                        status: 'target_exists'
                     });
                 } else {
-                    const newPath = path.join(fcDir, expectedFilename);
+                    // Copy file to downloaded-pdfs with correct name
+                    fs.copyFileSync(sourceFilePath, targetPath);
+                    console.log(`✓ Copied and renamed: ${filename} → ${expectedFilename}`);
                     
-                    // Check if target filename already exists
-                    if (fs.existsSync(newPath)) {
-                        console.log(`⚠️  Target file already exists: ${expectedFilename}`);
-                        // Still mark original for deletion if it's a timestamp file
-                        if (filename.match(/_(20\d{6}_\d{6})\.pdf$/)) {
-                            processedFiles.add(filename); // Mark for deletion
-                        }
-                        results.push({
-                            originalFile: filename,
-                            newFile: expectedFilename,
-                            documentNumber: correctDocumentNumber,
-                            renamed: false,
-                            status: 'target_exists'
-                        });
-                    } else {
-                        // Rename the file
-                        fs.renameSync(filePath, newPath);
-                        console.log(`✓ Renamed: ${filename} → ${expectedFilename}`);
-                        
-                        // Mark original file for deletion if it was a timestamp file
-                        if (filename.match(/_(20\d{6}_\d{6})\.pdf$/)) {
-                            processedFiles.add(filename);
-                        }
-                        
-                        results.push({
-                            originalFile: filename,
-                            newFile: expectedFilename,
-                            documentNumber: correctDocumentNumber,
-                            renamed: true,
-                            status: 'renamed'
-                        });
-                    }
+                    // Mark original file for deletion
+                    processedFiles.add(filename);
+                    
+                    results.push({
+                        originalFile: filename,
+                        newFile: expectedFilename,
+                        documentNumber: correctDocumentNumber,
+                        renamed: true,
+                        status: 'copied_and_renamed'
+                    });
                 }
             } else {
-                console.log(`✗ Could not extract correct document number - file unchanged`);
+                console.log(`✗ Could not extract correct document number - file skipped`);
                 results.push({
                     originalFile: filename,
                     newFile: filename,
@@ -202,9 +189,62 @@ async function renameDocumentPDFs() {
             console.log('-'.repeat(50));
         }
         
-        // Step 2: Clean up unwanted files
+        // Step 2: Clean up ORIGINALS folder - delete processed files and any non-invoice/delivery files
         console.log('\n=== CLEANUP PHASE ===');
-        const cleanupResults = await cleanupUnwantedFiles();
+        console.log(`Deleting ${processedFiles.size} successfully processed files from ORIGINALS...`);
+        
+        const deleted = [];
+        const errors = [];
+        
+        // Delete successfully processed files
+        for (const filename of processedFiles) {
+            const filePath = path.join(originalsDir, filename);
+            try {
+                fs.unlinkSync(filePath);
+                console.log(`🗑️  Deleted processed file: ${filename}`);
+                deleted.push(filename);
+            } catch (error) {
+                console.log(`❌ Error deleting ${filename}: ${error.message}`);
+                errors.push({ filename, error: error.message });
+            }
+        }
+        
+        // Delete any remaining non-invoice/delivery files
+        console.log('\n🧹 Cleaning up remaining non-invoice/delivery files from ORIGINALS...');
+        try {
+            const remainingFiles = fs.readdirSync(originalsDir);
+            const filesToDelete = remainingFiles.filter(file => {
+                if (!file.endsWith('.pdf')) return false;
+                
+                // Keep only Factura de deudores and Entrega files (if any remain)
+                if (file.startsWith('Factura de deudores') || file.startsWith('Entrega_')) {
+                    return false;
+                }
+                
+                // Delete everything else
+                return true;
+            });
+            
+            console.log(`Found ${filesToDelete.length} non-invoice/delivery files to delete`);
+            
+            for (const filename of filesToDelete) {
+                const filePath = path.join(originalsDir, filename);
+                try {
+                    fs.unlinkSync(filePath);
+                    console.log(`🗑️  Deleted non-invoice file: ${filename}`);
+                    deleted.push(filename);
+                } catch (error) {
+                    console.log(`❌ Error deleting ${filename}: ${error.message}`);
+                    errors.push({ filename, error: error.message });
+                }
+            }
+            
+        } catch (error) {
+            console.log(`❌ Error reading ORIGINALS folder for cleanup: ${error.message}`);
+            errors.push({ filename: 'ORIGINALS_SCAN', error: error.message });
+        }
+        
+        const cleanupResults = { deleted, errors };
         
         // Save results to JSON for review
         const finalResults = {
@@ -215,26 +255,27 @@ async function renameDocumentPDFs() {
         fs.writeFileSync('./document-processing-results.json', JSON.stringify(finalResults, null, 2));
         
         console.log('\n=== FINAL SUMMARY ===');
-        const renamed = results.filter(r => r.status === 'renamed');
-        const alreadyCorrect = results.filter(r => r.status === 'already_correct');
+        const copiedAndRenamed = results.filter(r => r.status === 'copied_and_renamed');
         const targetExists = results.filter(r => r.status === 'target_exists');
         const failed = results.filter(r => r.status === 'failed');
         
-        console.log(`Successfully renamed: ${renamed.length}`);
-        console.log(`Already correct: ${alreadyCorrect.length}`);
+        console.log(`Successfully copied and renamed: ${copiedAndRenamed.length}`);
         console.log(`Target exists (skipped): ${targetExists.length}`);
         console.log(`Failed to process: ${failed.length}`);
-        console.log(`Files deleted in cleanup: ${cleanupResults.deleted.length}`);
+        console.log(`Total files deleted from ORIGINALS: ${cleanupResults.deleted.length}`);
+        console.log(`  - Processed invoice/delivery files: ${processedFiles.size}`);
+        console.log(`  - Non-invoice/delivery files: ${cleanupResults.deleted.length - processedFiles.size}`);
         console.log(`Cleanup errors: ${cleanupResults.errors.length}`);
         
-        if (renamed.length > 0) {
-            console.log('\nFiles renamed with CORRECT document numbers:');
-            renamed.forEach(r => {
+        if (copiedAndRenamed.length > 0) {
+            console.log('\nFiles copied to downloaded-pdfs with CORRECT document numbers:');
+            copiedAndRenamed.forEach(r => {
                 console.log(`${r.originalFile} → ${r.newFile} (Document: ${r.documentNumber})`);
             });
         }
         
-        console.log(`\nResults saved to: document-processing-results.json`);
+        console.log(`\nWorkflow: ORIGINALS → rename & copy → downloaded-pdfs → delete from ORIGINALS`);
+        console.log(`Results saved to: document-processing-results.json`);
         
     } catch (error) {
         console.error('Error processing document PDFs:', error);

@@ -3,7 +3,12 @@
  * 
  * WORKFLOW:
  * 1. PDFs are first downloaded to downloaded-pdfs/ORIGINALS/
- * 2. rename-invoice-pdfs.cjs processes them and moves to downloaded-pdfs/ with proper names
+ * 2. rename-invoice-pdfs.cjs processes the      // Query invoices by FolioNumberFrom field - include SalesPersonCode and other needed fields
+      const response = await this.sapConnection.get(`/Invoices?$filter=FolioNumberFrom eq ${invoiceNumber}&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry`);
+      
+      if (response.data && response.data.value && response.data.value.length > 0) {
+        const invoice = response.data.value[0];
+        console.log(`✅ Found invoice ${invoice.DocNum} - ${invoice.CardName}`);s to downloaded-pdfs/ with proper names
  * 3. This email-service.js processes the renamed PDFs from downloaded-pdfs/
  * 4. Matches with SAP using FolioNumber and sends via email
  * 5. Marks U_EmailSent = 'Y' in SAP when successfully sent
@@ -15,6 +20,10 @@ import nodemailer from 'nodemailer';
 import axios from 'axios';
 import https from 'https';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+// Load environment variables from .env.local
+dotenv.config({ path: '.env.local' });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,22 +181,19 @@ class EmailService {
         // Get warehouse from DocumentLines
         let warehouse = 'No especificado';
         try {
-          console.log(`🏢 Getting warehouse from DocumentLines for DocEntry ${invoice.DocEntry}...`);
           const linesResponse = await this.sapConnection.get(`/Invoices(${invoice.DocEntry})`);
           
           if (linesResponse.data && linesResponse.data.DocumentLines && linesResponse.data.DocumentLines.length > 0) {
             const firstLine = linesResponse.data.DocumentLines[0];
             warehouse = firstLine.WarehouseCode || 'No especificado';
-            console.log(`📦 Warehouse found: ${warehouse}`);
-          } else {
-            console.log(`⚠️ No DocumentLines found for warehouse info`);
           }
         } catch (warehouseError) {
-          console.log(`⚠️ Could not get warehouse info: ${warehouseError.message}`);
+          console.log(`⚠️ Could not get warehouse: ${warehouseError.message}`);
         }
         
         return {
           docNum: invoice.DocNum,
+          docEntry: invoice.DocEntry,
           invoiceNumber: invoice.FolioNumberFrom || invoiceNumber,
           date: invoice.DocDate,
           total: invoice.DocTotal,
@@ -227,12 +233,10 @@ class EmailService {
           'BPAddresses'
         ];
         
-        console.log('📋 Available customer fields:', Object.keys(customer));
-        
         // Try direct email fields first
         for (const field of ['EmailAddress', 'E_Mail', 'Email']) {
           if (customer[field] && customer[field].trim()) {
-            console.log(`✅ Found email in ${field}: ${customer[field]}`);
+            console.log(`✅ Found email: ${customer[field]}`);
             return customer[field];
           }
         }
@@ -258,12 +262,32 @@ class EmailService {
         }
         
         console.log(`❌ No email found for customer ${customerCode}`);
-        console.log('🔍 Customer data structure:', JSON.stringify(customer, null, 2));
         return null;
       }
       
     } catch (error) {
       console.error(`❌ Error getting customer email for ${customerCode}:`, error.message);
+      return null;
+    }
+  }
+
+
+
+  getSalespersonEmail(salesPersonCode) {
+    try {
+      // Look for salesperson email using SALES_PERSON_EMAIL_ prefix
+      const emailKey = `SALES_PERSON_EMAIL_${salesPersonCode}`;
+      const email = process.env[emailKey];
+      
+      if (email && email.trim() && email.includes('@')) {
+        console.log(`📧 Found salesperson email for code ${salesPersonCode}: ${email}`);
+        return email.trim();
+      } else {
+        console.log(`⚠️ No email found for salesperson code ${salesPersonCode}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ Error getting salesperson email for code ${salesPersonCode}:`, error.message);
       return null;
     }
   }
@@ -292,93 +316,223 @@ class EmailService {
 
   async sendInvoiceEmail(customerEmail, invoiceData, pdfPath) {
     try {
-      console.log(`📧 Sending email to ${customerEmail} for invoice ${invoiceData.invoiceNumber} (Series: ${invoiceData.series})`);
+      console.log(`📧 Processing email for invoice ${invoiceData.invoiceNumber} (Series: ${invoiceData.series}, Warehouse: ${invoiceData.warehouse})`);
+      
+      // Determine all recipients
+      const recipients = [];
+      
+      // 1. Send to customer if email available
+      if (customerEmail && customerEmail.includes('@')) {
+        recipients.push({ email: customerEmail, type: 'customer' });
+        console.log(`📧 Customer email: ${customerEmail}`);
+      } else {
+        console.log(`⚠️ No customer email available - will send to salesperson/warehouse only`);
+      }
+      
+      // 2. Always send to salesperson (if email exists)
+      const salespersonEmail = this.getSalespersonEmail(invoiceData.salesPersonCode);
+      if (salespersonEmail) {
+        recipients.push({ email: salespersonEmail, type: 'salesperson' });
+        console.log(`👤 Salesperson email: ${salespersonEmail}`);
+      }
+      
+      // 3. If warehouse 07, also send to warehouse email
+      if (invoiceData.warehouse === '07') {
+        recipients.push({ email: 'sarandishk@gmail.com', type: 'warehouse' });
+        console.log(`🏢 Warehouse 07 detected - adding: sarandishk@gmail.com`);
+      }
+      
+      if (recipients.length === 0) {
+        console.log(`❌ No valid email recipients found for invoice ${invoiceData.invoiceNumber}`);
+        return false;
+      }
+      
+      console.log(`📧 Sending to ${recipients.length} recipients: ${recipients.map(r => `${r.email} (${r.type})`).join(', ')}`);
       
       const emailContent = this.getEmailContent(invoiceData);
       
-      const mailOptions = {
-        from: {
-          name: 'Simsiroglu',
-          address: 'no_responder@simsiroglu.com.ar'
-        },
-        to: customerEmail,
-        subject: emailContent.subject,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-              <h2 style="color: #333; margin-top: 0;">${emailContent.headerTitle}</h2>
-              
-              <p>${emailContent.greeting}</p>
-              
-              <p>${emailContent.bodyText}</p>
-              
-              <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>${emailContent.numberLabel}</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoiceData.invoiceNumber}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Fecha:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${new Date(invoiceData.date).toLocaleDateString('es-AR')}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Total:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">$${parseFloat(invoiceData.total).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Depósito:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoiceData.warehouse}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;"><strong>Vendedor:</strong></td>
-                    <td style="padding: 8px 0;">${invoiceData.salesPersonCode}</td>
-                  </tr>
-                </table>
-              </div>
-              
-              <p><strong>Importante:</strong> Este es un email automático, por cualquier consulta escribir a info@simsiroglu.com.ar</p>
-              
-              <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
-              
-              <p style="text-align: center; color: #666; font-size: 14px; margin-bottom: 0;">
-                <strong>Gracias por su compra.</strong>
-              </p>
+      // Prepare email template
+      const htmlTemplate = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #333; margin-top: 0;">${emailContent.headerTitle}</h2>
+            
+            <p>${emailContent.greeting}</p>
+            
+            <p>${emailContent.bodyText}</p>
+            
+            <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>${emailContent.numberLabel}</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoiceData.invoiceNumber}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Fecha:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${new Date(invoiceData.date).toLocaleDateString('es-AR')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Total:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">$${parseFloat(invoiceData.total).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Depósito:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoiceData.warehouse}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Vendedor:</strong></td>
+                  <td style="padding: 8px 0;">${invoiceData.salesPersonCode}</td>
+                </tr>
+              </table>
             </div>
+            
+            <p><strong>Importante:</strong> Este es un email automático, por cualquier consulta escribir a info@simsiroglu.com.ar</p>
+            
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+            
+            <p style="text-align: center; color: #666; font-size: 14px; margin-bottom: 0;">
+              <strong>Gracias por su compra.</strong>
+            </p>
           </div>
-        `,
-        attachments: pdfPath ? [
-          {
-            filename: path.basename(pdfPath),
-            path: pdfPath,
-            contentType: 'application/pdf'
-          }
-        ] : []
-      };
+        </div>
+      `;
+      
+      // Send email to all recipients
+      let successCount = 0;
+      const results = [];
+      
+      for (const recipient of recipients) {
+        try {
+          const mailOptions = {
+            from: {
+              name: 'Simsiroglu',
+              address: 'no_responder@simsiroglu.com.ar'
+            },
+            to: recipient.email,
+            subject: emailContent.subject,
+            html: htmlTemplate,
+            attachments: pdfPath ? [
+              {
+                filename: path.basename(pdfPath),
+                path: pdfPath,
+                contentType: 'application/pdf'
+              }
+            ] : []
+          };
 
-      const result = await this.emailTransporter.sendMail(mailOptions);
-      console.log(`✅ Email sent successfully to ${customerEmail} (MessageId: ${result.messageId})`);
-      return true;
+          const result = await this.emailTransporter.sendMail(mailOptions);
+          console.log(`✅ Email sent to ${recipient.email} (${recipient.type}) - MessageId: ${result.messageId}`);
+          results.push({ recipient: recipient.email, type: recipient.type, success: true, messageId: result.messageId });
+          successCount++;
+          
+        } catch (error) {
+          console.error(`❌ Failed to send email to ${recipient.email} (${recipient.type}):`, error.message);
+          results.push({ recipient: recipient.email, type: recipient.type, success: false, error: error.message });
+        }
+      }
+      
+      console.log(`📊 Email summary: ${successCount}/${recipients.length} emails sent successfully`);
+      
+      // Return true if at least one email was sent successfully
+      return successCount > 0;
+      
     } catch (error) {
-      console.error(`❌ Failed to send email to ${customerEmail}:`, error.message);
+      console.error(`❌ Failed to process email for invoice ${invoiceData.invoiceNumber}:`, error.message);
       return false;
     }
   }
 
-  async markEmailSentInSAP(docNum) {
+  async markEmailSentInSAP(docEntry) {
     try {
-      console.log(`📝 Marking invoice ${docNum} as email sent in SAP...`);
+      console.log(`📝 Marking invoice DocEntry ${docEntry} as email sent in SAP...`);
       
       const updateData = {
         U_EmailSent: 'Y'
       };
       
-      await this.sapConnection.patch(`/Invoices(${docNum})`, updateData);
-      console.log(`✅ Invoice ${docNum} marked as email sent in SAP`);
+      await this.sapConnection.patch(`/Invoices(${docEntry})`, updateData);
+      console.log(`✅ Invoice DocEntry ${docEntry} marked as email sent in SAP`);
+      
       return true;
     } catch (error) {
-      console.error(`❌ Failed to mark invoice ${docNum} as email sent:`, error.message);
+      console.error(`❌ Failed to mark invoice DocEntry ${docEntry} as email sent:`, error.message);
       return false;
+    }
+  }
+
+  async movePdfToEmailSentFolder(pdfPath) {
+    try {
+      const emailSentFolder = path.join(this.downloadsFolder, 'EMAIL SENT');
+      
+      // Create EMAIL SENT folder if it doesn't exist
+      if (!fs.existsSync(emailSentFolder)) {
+        fs.mkdirSync(emailSentFolder, { recursive: true });
+        console.log(`📁 Created EMAIL SENT folder: ${emailSentFolder}`);
+      }
+      
+      const filename = path.basename(pdfPath);
+      const destinationPath = path.join(emailSentFolder, filename);
+      
+      // Move the file
+      fs.renameSync(pdfPath, destinationPath);
+      console.log(`📁 Moved ${filename} to EMAIL SENT folder`);
+      
+      return true;
+    } catch (error) {
+      console.error(`❌ Failed to move PDF to EMAIL SENT folder:`, error.message);
+      return false;
+    }
+  }
+
+  async getUnsentInvoicesFromSAP(fromDate = '2025-09-22', toDate = '2025-09-23') {
+    try {
+      console.log(`🔍 Querying SAP for unsent email invoices between ${fromDate} and ${toDate}...`);
+      
+      // Query for invoices where U_EmailSent is not 'Y' AND DocDate is between fromDate and toDate
+      // Use $top=1000 to get more results and avoid pagination issues
+      const response = await this.sapConnection.get(`/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry&$orderby=DocDate desc&$top=1000`);
+      
+      if (response.data && response.data.value && response.data.value.length > 0) {
+        console.log(`✅ Found ${response.data.value.length} unsent invoices in SAP between ${fromDate} and ${toDate}`);
+        
+        // Log the date range of found invoices
+        const dates = response.data.value.map(inv => inv.DocDate).filter(Boolean);
+        if (dates.length > 0) {
+          const minDate = Math.min(...dates.map(d => new Date(d)));
+          const maxDate = Math.max(...dates.map(d => new Date(d)));
+          console.log(`📅 Invoice date range: ${new Date(minDate).toISOString().split('T')[0]} to ${new Date(maxDate).toISOString().split('T')[0]}`);
+        }
+        
+        return response.data.value;
+      } else {
+        console.log(`📭 No unsent invoices found in SAP between ${fromDate} and ${toDate}`);
+        return [];
+      }
+    } catch (error) {
+      console.error('❌ Error querying unsent invoices from SAP:', error.message);
+      return [];
+    }
+  }
+
+  async findPDFForInvoice(folioNumber) {
+    try {
+      // Look for PDF with the format: Factura_de_deudores_[NUMBER].pdf
+      const expectedFilename = `Factura_de_deudores_${folioNumber}.pdf`;
+      const pdfPath = path.join(this.downloadsFolder, expectedFilename);
+      
+      if (fs.existsSync(pdfPath)) {
+        console.log(`✅ Found PDF for invoice ${folioNumber}: ${expectedFilename}`);
+        return {
+          filename: expectedFilename,
+          fullPath: pdfPath
+        };
+      } else {
+        console.log(`❌ PDF not found for invoice ${folioNumber} (expected: ${expectedFilename})`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ Error looking for PDF for invoice ${folioNumber}:`, error.message);
+      return null;
     }
   }
 
@@ -389,55 +543,80 @@ class EmailService {
       // Initialize SAP connection
       await this.initializeSapConnection();
       
-      // Get processed PDFs
-      const pdfFiles = await this.getProcessedPDFs();
+      // Get unsent invoices from SAP first (September 22-23, 2025)
+      const unsentInvoices = await this.getUnsentInvoicesFromSAP('2025-09-22', '2025-09-23');
       
-      if (pdfFiles.length === 0) {
-        console.log('📭 No PDF files found to process');
+      if (unsentInvoices.length === 0) {
+        console.log('📭 No unsent invoices found in SAP');
         return;
       }
 
-      console.log(`📧 Processing ${pdfFiles.length} invoices for email delivery...`);
+      console.log(`📧 Processing ${unsentInvoices.length} unsent invoices for email delivery...`);
       
-      for (const pdfFile of pdfFiles) {
+      for (const invoice of unsentInvoices) {
         try {
-          console.log(`\n📄 Processing: ${pdfFile.filename}`);
+          console.log(`\n📄 Processing invoice: ${invoice.FolioNumberFrom} (DocNum: ${invoice.DocNum})`);
           
-          // Extract invoice number from filename
-          const invoiceNumber = await this.extractInvoiceNumberFromFilename(pdfFile.filename);
-          console.log(`🔍 Extracted invoice number: ${invoiceNumber}`);
-          
-          // Find invoice in SAP
-          const invoiceData = await this.findInvoiceInSAP(invoiceNumber);
-          if (!invoiceData) {
-            console.log(`   ⚠️ Invoice ${invoiceNumber} not found in SAP`);
+          // Look for corresponding PDF file
+          const pdfFile = await this.findPDFForInvoice(invoice.FolioNumberFrom);
+          if (!pdfFile) {
+            console.log(`   ⚠️ PDF not found for invoice ${invoice.FolioNumberFrom}, skipping`);
             continue;
           }
           
-          // Get customer email
+          // Get warehouse from DocumentLines
+          let warehouse = 'No especificado';
+          try {
+            const linesResponse = await this.sapConnection.get(`/Invoices(${invoice.DocEntry})`);
+            
+            if (linesResponse.data && linesResponse.data.DocumentLines && linesResponse.data.DocumentLines.length > 0) {
+              const firstLine = linesResponse.data.DocumentLines[0];
+              warehouse = firstLine.WarehouseCode || 'No especificado';
+            }
+          } catch (warehouseError) {
+            console.log(`⚠️ Could not get warehouse: ${warehouseError.message}`);
+          }
+          
+          // Prepare invoice data
+          const invoiceData = {
+            docNum: invoice.DocNum,
+            docEntry: invoice.DocEntry,
+            invoiceNumber: invoice.FolioNumberFrom,
+            date: invoice.DocDate,
+            total: invoice.DocTotal,
+            customerCode: invoice.CardCode,
+            customerName: invoice.CardName,
+            emailSent: invoice.U_EmailSent,
+            series: invoice.Series,
+            salesPersonCode: invoice.SalesPersonCode,
+            warehouse: warehouse
+          };
+          
+          console.log(`� Series: ${invoiceData.series}, Warehouse: ${invoiceData.warehouse}, Sales: ${invoiceData.salesPersonCode}, EmailSent: ${invoiceData.emailSent || 'null'}`);
+          
+          // Double-check: Skip if already marked as sent
+          if (invoiceData.emailSent === 'Y') {
+            console.log(`   ⚠️ Email already sent for invoice ${invoiceData.invoiceNumber} (U_EmailSent = 'Y'), skipping`);
+            continue;
+          }
+          
+          // Get customer email (but don't skip if missing - still send to salesperson/warehouse)
           const customerEmail = await this.getCustomerEmailFromSAP(invoiceData.customerCode);
           if (!customerEmail) {
-            console.log(`   ⚠️ No email found for customer ${invoiceData.customerName}`);
-            continue;
-          }
-          
-          // Check if email already sent
-          if (invoiceData.emailSent === 'Y') {
-            console.log(`   ⚠️ Email already sent for invoice ${invoiceNumber}, skipping`);
-            continue;
+            console.log(`   ⚠️ No email found for customer ${invoiceData.customerName}, but will still send to salesperson/warehouse`);
           }
           
           // Send email
           const success = await this.sendInvoiceEmail(customerEmail, invoiceData, pdfFile.fullPath);
           
           if (success) {
-            // Mark as sent in SAP
-            await this.markEmailSentInSAP(invoiceData.docNum);
-            console.log(`   ✅ Email sent and marked in SAP for invoice ${invoiceNumber}`);
+            // Mark as sent in SAP (PDFs remain in downloaded-pdfs folder)
+            await this.markEmailSentInSAP(invoiceData.docEntry);
+            console.log(`   ✅ Email sent and marked in SAP for invoice ${invoiceData.invoiceNumber}`);
           }
           
         } catch (error) {
-          console.error(`❌ Error processing ${pdfFile.filename}:`, error.message);
+          console.error(`❌ Error processing invoice ${invoice.FolioNumberFrom}:`, error.message);
         }
       }
       
