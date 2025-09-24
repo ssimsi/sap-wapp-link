@@ -6,7 +6,41 @@
  * 2. rename-invoice-pdfs.cjs processes the      // Query invoices by FolioNumberFrom field - include SalesPersonCode and other needed fields
       const response = await this.sapConnection.get(`/Invoices?$filter=FolioNumberFrom eq ${invoiceNumber}&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry`);
       
-      if (response.data && response.data.value && response.data.value.length > 0) {
+      if (response.data && response.data.va  async markEmailSentInSAP(docEntry) {
+    try {
+      console.log(`📝 Marking invoice ${docEntry} as email sent in SAP...`);
+      
+      const updateData = {
+        U_EmailSent: 'Y'
+      };
+      
+      const response = await this.fetchWithAuth(
+        `${this.sapBaseUrl}/Invoices(${docEntry})`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updateData)
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to update SAP invoice: ${response.status} - ${await response.text()}`);
+      }
+      
+      console.log(`✅ Invoice ${docEntry} marked as sent in SAP`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error(`❌ Error marking invoice ${docEntry} as sent:`, error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+
+
+ata.value.length > 0) {
         const invoice = response.data.value[0];
         console.log(`✅ Found invoice ${invoice.DocNum} - ${invoice.CardName}`);s to downloaded-pdfs/ with proper names
  * 3. This email-service.js processes the renamed PDFs from downloaded-pdfs/
@@ -450,6 +484,87 @@ class EmailService {
     }
   }
 
+  async sendEntregaEmail(entregaData) {
+    try {
+      console.log(`📧 Processing Entrega ${entregaData.docNum} for ${entregaData.customerName}`);
+      
+      // Check if any document line has warehouse 07
+      const hasWarehouse07 = entregaData.documentLines && 
+        entregaData.documentLines.some(line => line.WarehouseCode === '07');
+      
+      if (!hasWarehouse07) {
+        console.log(`⏭️  Entrega ${entregaData.docNum} has no warehouse 07 lines - marking as sent without email`);
+        return { success: true, emailSent: false, reason: 'No warehouse 07' };
+      }
+      
+      console.log(`🏢 Entrega ${entregaData.docNum} has warehouse 07 - sending to sarandishk@gmail.com`);
+      
+      // Generate email content for Entrega
+      const customerRef = entregaData.customerReference || entregaData.docNum;
+      const subject = `Remito ref. ${customerRef}`;
+      
+      const htmlTemplate = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #333; margin-top: 0;">Remito de Entrega</h2>
+            
+            <p>Se ha generado un nuevo remito de entrega:</p>
+            
+            <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Número de Remito:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${entregaData.docNum}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Cliente:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${entregaData.customerName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Fecha de Entrega:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${new Date(entregaData.date).toLocaleDateString('es-AR')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Referencia:</strong></td>
+                  <td style="padding: 8px 0;">${customerRef}</td>
+                </tr>
+              </table>
+            </div>
+            
+            <p style="text-align: center; color: #666; font-size: 14px; margin-bottom: 0;">
+              <strong>Simsiroglu</strong>
+            </p>
+          </div>
+        </div>
+      `;
+      
+      try {
+        const mailOptions = {
+          from: {
+            name: 'Simsiroglu - Sistema de Entregas',
+            address: 'no_responder@simsiroglu.com.ar'
+          },
+          to: 'sarandishk@gmail.com',
+          subject: subject,
+          html: htmlTemplate
+        };
+        
+        await this.emailTransporter.sendMail(mailOptions);
+        
+        console.log(`✅ Entrega email sent successfully to sarandishk@gmail.com`);
+        return { success: true, emailSent: true, recipient: 'sarandishk@gmail.com' };
+        
+      } catch (emailError) {
+        console.error(`❌ Failed to send Entrega email: ${emailError.message}`);
+        return { success: false, error: emailError.message };
+      }
+      
+    } catch (error) {
+      console.error('❌ Error processing Entrega email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   async markEmailSentInSAP(docEntry) {
     try {
       console.log(`📝 Marking invoice DocEntry ${docEntry} as email sent in SAP...`);
@@ -465,6 +580,178 @@ class EmailService {
     } catch (error) {
       console.error(`❌ Failed to mark invoice DocEntry ${docEntry} as email sent:`, error.message);
       return false;
+    }
+  }
+
+  async markEntregaSentInSAP(docEntry) {
+    try {
+      console.log(`📝 Marking Entrega ${docEntry} as email sent in SAP...`);
+      
+      const updateData = {
+        U_EmailSent: 'Y'
+      };
+      
+      const response = await this.sapConnection.patch(`/DeliveryNotes(${docEntry})`, updateData);
+      
+      console.log(`✅ Entrega ${docEntry} marked as sent in SAP`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error(`❌ Error marking Entrega ${docEntry} as sent:`, error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async sendProcessingSummary(invoiceStats, entregaStats, pendingInvoices = [], pendingEntregas = []) {
+    try {
+      console.log('📊 Preparing processing summary report for ssimsi@gmail.com...');
+      
+      const now = new Date();
+      const timestamp = now.toLocaleString('es-AR', { 
+        timeZone: 'America/Argentina/Buenos_Aires',
+        year: 'numeric',
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      // Calculate totals
+      const totalInvoices = invoiceStats?.processed || 0;
+      const totalEntregas = entregaStats?.processed || 0;
+      const totalEmailsSent = (invoiceStats?.emailsSent || 0) + (entregaStats?.sent || 0);
+      
+      const subject = `📧 Sistema de Emails - Resumen ${timestamp}`;
+      
+      const htmlTemplate = `
+        <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0; text-align: center;">📧 Resumen del Sistema de Emails</h2>
+            <p style="margin: 5px 0 0 0; text-align: center; opacity: 0.9;">${timestamp}</p>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px;">
+            <div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
+              <div style="text-align: center; background: white; padding: 15px; border-radius: 8px; min-width: 150px;">
+                <h3 style="margin: 0; color: #2563eb; font-size: 24px;">${totalInvoices}</h3>
+                <p style="margin: 5px 0 0 0; color: #666;">Facturas</p>
+              </div>
+              <div style="text-align: center; background: white; padding: 15px; border-radius: 8px; min-width: 150px;">
+                <h3 style="margin: 0; color: #16a34a; font-size: 24px;">${totalEntregas}</h3>
+                <p style="margin: 5px 0 0 0; color: #666;">Entregas</p>
+              </div>
+              <div style="text-align: center; background: white; padding: 15px; border-radius: 8px; min-width: 150px;">
+                <h3 style="margin: 0; color: #dc2626; font-size: 24px;">${totalEmailsSent}</h3>
+                <p style="margin: 5px 0 0 0; color: #666;">Emails Enviados</p>
+              </div>
+            </div>
+            
+            ${invoiceStats ? `
+            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #2563eb; padding-bottom: 5px;">📄 Facturas</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Procesadas:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${invoiceStats.processed}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Emails Enviados:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${invoiceStats.emailsSent}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;" colspan="2">
+                    <strong>Pendientes:</strong>
+                    ${pendingInvoices.length > 0 ? `
+                      <div style="margin-top: 8px;">
+                        ${pendingInvoices.map(inv => `
+                          <div style="background: #fff3cd; border-left: 3px solid #ffc107; padding: 8px; margin: 4px 0; border-radius: 3px;">
+                            <strong>#${inv.FolioNumberFrom}</strong> - ${inv.CardName}<br>
+                            <small style="color: #666;">Fecha: ${new Date(inv.DocDate).toLocaleDateString('es-AR')} | Total: $${parseFloat(inv.DocTotal).toLocaleString('es-AR', {minimumFractionDigits: 2})}</small>
+                          </div>
+                        `).join('')}
+                      </div>
+                    ` : '<span style="color: #28a745;">Ninguna</span>'}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Duración:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${invoiceStats.duration ? invoiceStats.duration.toFixed(1) + 's' : 'N/A'}</td>
+                </tr>
+              </table>
+            </div>
+            ` : ''}
+            
+            ${entregaStats ? `
+            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #16a34a; padding-bottom: 5px;">🚚 Entregas</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Procesadas:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${entregaStats.processed}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Emails Enviados:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${entregaStats.sent}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Solo Marcadas:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${entregaStats.skipped}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;" colspan="2">
+                    <strong>Pendientes:</strong>
+                    ${pendingEntregas.length > 0 ? `
+                      <div style="margin-top: 8px;">
+                        ${pendingEntregas.map(ent => `
+                          <div style="background: #fff3cd; border-left: 3px solid #ffc107; padding: 8px; margin: 4px 0; border-radius: 3px;">
+                            <strong>#${ent.docNum}</strong> - ${ent.customerName}<br>
+                            <small style="color: #666;">Fecha: ${new Date(ent.docDate).toLocaleDateString('es-AR')} | Total: $${parseFloat(ent.docTotal).toLocaleString('es-AR', {minimumFractionDigits: 2})}</small>
+                          </div>
+                        `).join('')}
+                      </div>
+                    ` : '<span style="color: #28a745;">Ninguna</span>'}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Duración:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${entregaStats.duration ? entregaStats.duration.toFixed(1) + 's' : 'N/A'}</td>
+                </tr>
+              </table>
+            </div>
+            ` : ''}
+            
+            <div style="background-color: #e0f2fe; border-left: 4px solid #0277bd; padding: 15px; border-radius: 0 8px 8px 0;">
+              <p style="margin: 0; color: #01579b;"><strong>ℹ️ Sistema funcionando correctamente</strong></p>
+              <p style="margin: 5px 0 0 0; color: #0277bd; font-size: 14px;">
+                Próxima ejecución programada automáticamente
+              </p>
+            </div>
+            
+            <p style="text-align: center; color: #666; font-size: 14px; margin: 20px 0 0 0;">
+              <strong>Simsiroglu - Sistema Automático de Emails</strong>
+            </p>
+          </div>
+        </div>
+      `;
+      
+      const mailOptions = {
+        from: {
+          name: 'Simsiroglu - Sistema de Emails',
+          address: 'no_responder@simsiroglu.com.ar'
+        },
+        to: 'ssimsi@gmail.com',
+        subject: subject,
+        html: htmlTemplate
+      };
+      
+      await this.emailTransporter.sendMail(mailOptions);
+      
+      console.log('✅ Processing summary sent to ssimsi@gmail.com');
+      return { success: true };
+      
+    } catch (error) {
+      console.error('❌ Failed to send processing summary:', error.message);
+      return { success: false, error: error.message };
     }
   }
 
@@ -545,6 +832,71 @@ class EmailService {
     }
   }
 
+  async getUnsentEntregasFromSAP(fromDate = '2025-09-22', toDate = '2025-09-23') {
+    try {
+      console.log(`🔍 Querying SAP for unsent Entregas between ${fromDate} and ${toDate}...`);
+      
+      let allEntregas = [];
+      let url = `/DeliveryNotes?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,U_EmailSent,DocEntry,NumAtCard,DocumentLines&$orderby=DocDate desc`;
+      
+      // Paginate through all results using $skip
+      let skip = 0;
+      const pageSize = 20; // SAP B1 default page size
+      
+      while (true) {
+        const paginatedUrl = `${url}&$skip=${skip}&$top=${pageSize}`;
+        console.log(`🚚 Fetching Entregas page ${Math.floor(skip / pageSize) + 1} (skip ${skip})...`);
+        
+        const response = await this.sapConnection.get(paginatedUrl);
+        
+        if (response.data && response.data.value && response.data.value.length > 0) {
+          allEntregas.push(...response.data.value);
+          
+          // If we got fewer results than page size, we've reached the end
+          if (response.data.value.length < pageSize) {
+            break;
+          }
+          
+          skip += pageSize;
+        } else {
+          break;
+        }
+      }
+      
+      if (allEntregas.length > 0) {
+        console.log(`✅ Found ${allEntregas.length} unsent Entregas in SAP between ${fromDate} and ${toDate} (across ${Math.ceil(allEntregas.length / pageSize)} pages)`);
+        
+        // Log the date range of found entregas
+        const dates = allEntregas.map(ent => ent.DocDate).filter(Boolean);
+        if (dates.length > 0) {
+          const minDate = Math.min(...dates.map(d => new Date(d)));
+          const maxDate = Math.max(...dates.map(d => new Date(d)));
+          console.log(`📅 Entrega date range: ${new Date(minDate).toISOString().split('T')[0]} to ${new Date(maxDate).toISOString().split('T')[0]}`);
+        }
+        
+        // Transform raw SAP data to our expected format
+        const mappedEntregas = allEntregas.map(entrega => ({
+          docEntry: entrega.DocEntry,
+          docNum: entrega.DocNum,
+          date: entrega.DocDate,
+          customerName: entrega.CardName,
+          customerCode: entrega.CardCode,
+          customerReference: entrega.NumAtCard,
+          documentLines: entrega.DocumentLines || [],
+          emailSent: entrega.U_EmailSent
+        }));
+        
+        return mappedEntregas;
+      } else {
+        console.log(`📭 No unsent Entregas found in SAP between ${fromDate} and ${toDate}`);
+        return [];
+      }
+    } catch (error) {
+      console.error('❌ Error querying unsent Entregas from SAP:', error.message);
+      return [];
+    }
+  }
+
   async findPDFForInvoice(folioNumber) {
     try {
       // Try different zero-padding patterns for PDF filename
@@ -576,7 +928,96 @@ class EmailService {
     }
   }
 
+  // Main Entregas processing method
+  async processUnsentEntregas() {
+    try {
+      console.log('\n🚚 Starting Entregas processing...');
+      const startTime = Date.now();
+      
+      const entregas = await this.getUnsentEntregasFromSAP();
+      
+      if (!entregas || entregas.length === 0) {
+        console.log('✅ No pending Entregas found');
+        return { success: true, processed: 0, sent: 0, skipped: 0 };
+      }
+      
+      console.log(`\n📦 Processing ${entregas.length} Entregas...`);
+      
+      let processed = 0;
+      let sent = 0;
+      let skipped = 0;
+      let errors = 0;
+      let pendingEntregas = [];
+      
+      for (const entrega of entregas) {
+        try {
+          console.log(`\n--- Processing Entrega ${processed + 1}/${entregas.length} ---`);
+          
+          // Process the entrega (send email or just mark as sent)
+          const emailResult = await this.sendEntregaEmail(entrega);
+          
+          if (emailResult.success) {
+            // Mark as sent in SAP regardless of whether email was sent
+            const markResult = await this.markEntregaSentInSAP(entrega.docEntry);
+            
+            if (markResult.success) {
+              processed++;
+              if (emailResult.emailSent) {
+                sent++;
+                console.log(`📧 ✅ Entrega ${entrega.docNum} processed - EMAIL SENT to warehouse`);
+              } else {
+                skipped++;
+                console.log(`📝 ✅ Entrega ${entrega.docNum} processed - MARKED ONLY (${emailResult.reason})`);
+              }
+            } else {
+              console.error(`❌ Failed to mark Entrega ${entrega.docNum} as sent in SAP`);
+              errors++;
+              pendingEntregas.push(entrega);
+            }
+          } else {
+            console.error(`❌ Failed to process Entrega ${entrega.docNum}: ${emailResult.error}`);
+            errors++;
+            pendingEntregas.push(entrega);
+          }
+          
+          // Small delay between operations
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`❌ Error processing Entrega ${entrega.docNum}:`, error.message);
+          errors++;
+          pendingEntregas.push(entrega);
+        }
+      }
+      
+      const duration = (Date.now() - startTime) / 1000;
+      console.log(`\n🏁 Entregas processing completed in ${duration.toFixed(2)}s`);
+      console.log(`📊 Summary: ${processed} processed | ${sent} emails sent | ${skipped} marked only | ${errors} errors`);
+      
+      return { 
+        success: true, 
+        processed, 
+        sent, 
+        skipped, 
+        errors, 
+        duration,
+        emailsSent: sent,  // Alias for consistency with invoice stats
+        pendingEntregas
+      };
+      
+    } catch (error) {
+      console.error('❌ Error in processUnsentEntregas:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   async processInvoiceEmails() {
+    const startTime = Date.now();
+    let invoiceStats = { processed: 0, emailsSent: 0, errors: 0, duration: 0 };
+    let entregaStats = null;
+    let pendingInvoices = [];
+    let pendingEntregas = [];
+    
     try {
       console.log('🚀 Starting email service...');
       
@@ -588,19 +1029,18 @@ class EmailService {
       
       if (unsentInvoices.length === 0) {
         console.log('📭 No unsent invoices found in SAP');
-        return;
-      }
-
-      console.log(`📧 Processing ${unsentInvoices.length} unsent invoices for email delivery...`);
-      
-      for (const invoice of unsentInvoices) {
+      } else {
+        console.log(`📧 Processing ${unsentInvoices.length} unsent invoices for email delivery...`);
+        
+        for (const invoice of unsentInvoices) {
         try {
           console.log(`\n📄 Processing invoice: ${invoice.FolioNumberFrom} (DocNum: ${invoice.DocNum})`);
           
           // Look for corresponding PDF file
           const pdfFile = await this.findPDFForInvoice(invoice.FolioNumberFrom);
           if (!pdfFile) {
-            console.log(`   ⚠️ PDF not found for invoice ${invoice.FolioNumberFrom}, skipping`);
+            console.log(`   ⚠️ PDF not found for invoice ${invoice.FolioNumberFrom}, adding to pending list`);
+            pendingInvoices.push(invoice);
             continue;
           }
           
@@ -650,21 +1090,54 @@ class EmailService {
           // Send email
           const success = await this.sendInvoiceEmail(customerEmail, invoiceData, pdfFile.fullPath);
           
+          invoiceStats.processed++;
           if (success) {
             // Mark as sent in SAP (PDFs remain in downloaded-pdfs folder)
             await this.markEmailSentInSAP(invoiceData.docEntry);
+            invoiceStats.emailsSent++;
             console.log(`   ✅ Email sent and marked in SAP for invoice ${invoiceData.invoiceNumber}`);
+          } else {
+            invoiceStats.errors++;
+            pendingInvoices.push(invoice);
           }
           
         } catch (error) {
           console.error(`❌ Error processing invoice ${invoice.FolioNumberFrom}:`, error.message);
+          invoiceStats.errors++;
+          pendingInvoices.push(invoice);
         }
       }
+      }
       
-      console.log('\n🏁 Email processing completed');
+      // Process entregas after invoices
+      console.log('\n🚚 Processing entregas...');
+      entregaStats = await this.processUnsentEntregas();
+      
+      // Extract pending entregas from result
+      if (entregaStats && entregaStats.pendingEntregas) {
+        pendingEntregas = entregaStats.pendingEntregas;
+      }
+      
+      // Calculate final statistics
+      invoiceStats.duration = (Date.now() - startTime) / 1000;
+      
+      console.log('\n🏁 All processing completed');
+      console.log(`📊 Final Summary: ${invoiceStats.processed} invoices, ${entregaStats?.processed || 0} entregas, ${invoiceStats.emailsSent + (entregaStats?.emailsSent || 0)} total emails sent`);
+      
+      // Send summary report to ssimsi@gmail.com
+      await this.sendProcessingSummary(invoiceStats, entregaStats, pendingInvoices, pendingEntregas);
       
     } catch (error) {
       console.error('💥 Fatal error in email service:', error.message);
+      
+      // Still send error report if possible
+      try {
+        invoiceStats.duration = (Date.now() - startTime) / 1000;
+        invoiceStats.errors = (invoiceStats.errors || 0) + 1;
+        await this.sendProcessingSummary(invoiceStats, entregaStats, pendingInvoices, pendingEntregas);
+      } catch (reportError) {
+        console.error('❌ Failed to send error report:', reportError.message);
+      }
     }
   }
 }
