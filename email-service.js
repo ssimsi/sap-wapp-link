@@ -186,15 +186,22 @@ class EmailService {
 
   async extractInvoiceNumberFromFilename(filename) {
     try {
-      // Format: Factura_de_deudores_[NUMBER].pdf
-      const match = filename.match(/Factura_de_deudores_(\d+)\.pdf/);
+      // Try new format first: Factura de deudores - [DOCNUM].pdf
+      let match = filename.match(/Factura de deudores - (\d+)\.pdf/);
       if (match) {
-        return match[1]; // Return the number part
+        return match[1]; // Return the DocNum part
       }
-      console.log(`⚠️ Could not extract invoice number from filename: ${filename}`);
+      
+      // Try old format as fallback: Factura_de_deudores_[DOCNUM].pdf
+      match = filename.match(/Factura_de_deudores_(\d+)\.pdf/);
+      if (match) {
+        return match[1]; // Return the DocNum part
+      }
+      
+      console.log(`⚠️ Could not extract DocNum from filename: ${filename}`);
       return null;
     } catch (error) {
-      console.error('❌ Error extracting invoice number:', error.message);
+      console.error('❌ Error extracting DocNum:', error.message);
       return null;
     }
   }
@@ -499,6 +506,13 @@ class EmailService {
       
       console.log(`🏢 Entrega ${entregaData.docNum} has warehouse 07 - sending to sarandishk@gmail.com`);
       
+      // Find the corresponding PDF file
+      const pdfFile = await this.findPDFForEntrega(entregaData.docNum);
+      if (!pdfFile) {
+        console.log(`   ⚠️ PDF not found for Entrega ${entregaData.docNum} - NOT marking as sent, will retry when PDF is available`);
+        return { success: false, emailSent: false, reason: 'No PDF found - not marked as sent' };
+      }
+      
       // Generate email content for Entrega
       const customerRef = entregaData.customerReference || entregaData.docNum;
       const subject = `Remito ref. ${customerRef}`;
@@ -549,6 +563,15 @@ class EmailService {
           html: htmlTemplate
         };
         
+        // Add PDF attachment if available
+        if (pdfFile) {
+          mailOptions.attachments = [{
+            filename: `Entrega_${entregaData.docNum}.pdf`,
+            path: pdfFile.fullPath
+          }];
+          console.log(`📎 Attaching PDF: ${pdfFile.filename}`);
+        }
+        
         await this.emailTransporter.sendMail(mailOptions);
         
         console.log(`✅ Entrega email sent successfully to sarandishk@gmail.com`);
@@ -565,16 +588,21 @@ class EmailService {
     }
   }
 
-  async markEmailSentInSAP(docEntry) {
+  isInvoiceCancelled(invoice) {
+    // Check if invoice is cancelled using SAP fields
+    return invoice.Cancelled === 'tYES' || invoice.DocumentStatus === 'bost_Cancelled';
+  }
+
+  async markEmailSentInSAP(docEntry, reason = 'Email sent') {
     try {
-      console.log(`📝 Marking invoice DocEntry ${docEntry} as email sent in SAP...`);
+      console.log(`📝 Marking invoice DocEntry ${docEntry} as email sent in SAP (${reason})...`);
       
       const updateData = {
         U_EmailSent: 'Y'
       };
       
       await this.sapConnection.patch(`/Invoices(${docEntry})`, updateData);
-      console.log(`✅ Invoice DocEntry ${docEntry} marked as email sent in SAP`);
+      console.log(`✅ Invoice DocEntry ${docEntry} marked as email sent in SAP - ${reason}`);
       
       return true;
     } catch (error) {
@@ -779,12 +807,17 @@ class EmailService {
     }
   }
 
-  async getUnsentInvoicesFromSAP(fromDate = '2025-09-22', toDate = '2025-09-23') {
+  async getUnsentInvoicesFromSAP(fromDate = '2025-09-22', toDate = null) {
     try {
-      console.log(`🔍 Querying SAP for unsent email invoices between ${fromDate} and ${toDate}...`);
+      const dateRangeText = toDate ? `between ${fromDate} and ${toDate}` : `from ${fromDate} onwards`;
+      console.log(`🔍 Querying SAP for unsent email invoices ${dateRangeText}...`);
       
       let allInvoices = [];
-      let url = `/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry,NumAtCard,Comments&$orderby=DocDate desc`;
+      let dateFilter = `DocDate ge '${fromDate}'`;
+      if (toDate) {
+        dateFilter += ` and DocDate le '${toDate}'`;
+      }
+      let url = `/Invoices?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and ${dateFilter}&$select=DocNum,DocDate,DocTotal,CardCode,CardName,FolioNumberFrom,U_EmailSent,Series,SalesPersonCode,DocEntry,NumAtCard,Comments,Cancelled,DocumentStatus&$orderby=DocDate desc`;
       
       // Paginate through all results using $skip
       let skip = 0;
@@ -811,7 +844,8 @@ class EmailService {
       }
       
       if (allInvoices.length > 0) {
-        console.log(`✅ Found ${allInvoices.length} unsent invoices in SAP between ${fromDate} and ${toDate} (across ${Math.ceil(allInvoices.length / pageSize)} pages)`);
+        const dateRangeText = toDate ? `between ${fromDate} and ${toDate}` : `from ${fromDate} onwards`;
+        console.log(`✅ Found ${allInvoices.length} unsent invoices in SAP ${dateRangeText} (across ${Math.ceil(allInvoices.length / pageSize)} pages)`);
         
         // Log the date range of found invoices
         const dates = allInvoices.map(inv => inv.DocDate).filter(Boolean);
@@ -823,7 +857,8 @@ class EmailService {
         
         return allInvoices;
       } else {
-        console.log(`📭 No unsent invoices found in SAP between ${fromDate} and ${toDate}`);
+        const dateRangeText = toDate ? `between ${fromDate} and ${toDate}` : `from ${fromDate} onwards`;
+        console.log(`📭 No unsent invoices found in SAP ${dateRangeText}`);
         return [];
       }
     } catch (error) {
@@ -832,12 +867,17 @@ class EmailService {
     }
   }
 
-  async getUnsentEntregasFromSAP(fromDate = '2025-09-22', toDate = '2025-09-23') {
+  async getUnsentEntregasFromSAP(fromDate = '2025-09-22', toDate = null) {
     try {
-      console.log(`🔍 Querying SAP for unsent Entregas between ${fromDate} and ${toDate}...`);
+      const dateRangeText = toDate ? `between ${fromDate} and ${toDate}` : `from ${fromDate} onwards`;
+      console.log(`🔍 Querying SAP for unsent Entregas ${dateRangeText}...`);
       
       let allEntregas = [];
-      let url = `/DeliveryNotes?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and DocDate ge '${fromDate}' and DocDate le '${toDate}'&$select=DocNum,DocDate,DocTotal,CardCode,CardName,U_EmailSent,DocEntry,NumAtCard,DocumentLines&$orderby=DocDate desc`;
+      let dateFilter = `DocDate ge '${fromDate}'`;
+      if (toDate) {
+        dateFilter += ` and DocDate le '${toDate}'`;
+      }
+      let url = `/DeliveryNotes?$filter=(U_EmailSent ne 'Y' or U_EmailSent eq null) and ${dateFilter}&$select=DocNum,DocDate,DocTotal,CardCode,CardName,U_EmailSent,DocEntry,NumAtCard,DocumentLines&$orderby=DocDate desc`;
       
       // Paginate through all results using $skip
       let skip = 0;
@@ -888,7 +928,8 @@ class EmailService {
         
         return mappedEntregas;
       } else {
-        console.log(`📭 No unsent Entregas found in SAP between ${fromDate} and ${toDate}`);
+        const dateRangeText = toDate ? `between ${fromDate} and ${toDate}` : `from ${fromDate} onwards`;
+        console.log(`📭 No unsent Entregas found in SAP ${dateRangeText}`);
         return [];
       }
     } catch (error) {
@@ -897,22 +938,30 @@ class EmailService {
     }
   }
 
-  async findPDFForInvoice(folioNumber) {
+  async findPDFForInvoice(docNum) {
     try {
-      // Try different zero-padding patterns for PDF filename
+      // Try different zero-padding patterns for PDF filename - both old and new formats
       const patterns = [
-        `Factura_de_deudores_${folioNumber}.pdf`,           // No padding: 14936
-        `Factura_de_deudores_0${folioNumber}.pdf`,          // 1 zero: 014936  
-        `Factura_de_deudores_00${folioNumber}.pdf`,         // 2 zeros: 0014936
-        `Factura_de_deudores_000${folioNumber}.pdf`,        // 3 zeros: 00014936
-        `Factura_de_deudores_0000${folioNumber}.pdf`,       // 4 zeros: 000014936
-        `Factura_de_deudores_00000${folioNumber}.pdf`       // 5 zeros: 0000014936
+        // New format with hyphens (current)
+        `Factura de deudores - ${docNum}.pdf`,           // No padding: 14936
+        `Factura de deudores - 0${docNum}.pdf`,          // 1 zero: 014936  
+        `Factura de deudores - 00${docNum}.pdf`,         // 2 zeros: 0014936
+        `Factura de deudores - 000${docNum}.pdf`,        // 3 zeros: 00014936
+        `Factura de deudores - 0000${docNum}.pdf`,       // 4 zeros: 000014936
+        `Factura de deudores - 00000${docNum}.pdf`,      // 5 zeros: 0000014936
+        // Old format with underscores (fallback)
+        `Factura_de_deudores_${docNum}.pdf`,           // No padding: 14936
+        `Factura_de_deudores_0${docNum}.pdf`,          // 1 zero: 014936  
+        `Factura_de_deudores_00${docNum}.pdf`,         // 2 zeros: 0014936
+        `Factura_de_deudores_000${docNum}.pdf`,        // 3 zeros: 00014936
+        `Factura_de_deudores_0000${docNum}.pdf`,       // 4 zeros: 000014936
+        `Factura_de_deudores_00000${docNum}.pdf`       // 5 zeros: 0000014936
       ];
       
       for (const filename of patterns) {
         const pdfPath = path.join(this.downloadsFolder, filename);
         if (fs.existsSync(pdfPath)) {
-          console.log(`✅ Found PDF for invoice ${folioNumber}: ${filename}`);
+          console.log(`✅ Found PDF for invoice DocNum ${docNum}: ${filename}`);
           return {
             filename: filename,
             fullPath: pdfPath
@@ -920,10 +969,49 @@ class EmailService {
         }
       }
       
-      console.log(`❌ PDF not found for invoice ${folioNumber} (tried multiple zero-padding patterns)`);
+      console.log(`❌ PDF not found for invoice DocNum ${docNum} (tried multiple zero-padding patterns with both hyphen and underscore formats)`);
       return null;
     } catch (error) {
-      console.error(`❌ Error looking for PDF for invoice ${folioNumber}:`, error.message);
+      console.error(`❌ Error looking for PDF for invoice DocNum ${docNum}:`, error.message);
+      return null;
+    }
+  }
+
+  async findPDFForEntrega(docNum) {
+    try {
+      // Try different zero-padding patterns for Entrega PDF filename - both old and new formats
+      const patterns = [
+        // New format with hyphens (current)
+        `Entrega - ${docNum}.pdf`,           // No padding: 153419
+        `Entrega - 0${docNum}.pdf`,          // 1 zero: 0153419  
+        `Entrega - 00${docNum}.pdf`,         // 2 zeros: 00153419
+        `Entrega - 000${docNum}.pdf`,        // 3 zeros: 000153419
+        `Entrega - 0000${docNum}.pdf`,       // 4 zeros: 0000153419
+        `Entrega - 00000${docNum}.pdf`,      // 5 zeros: 00000153419
+        // Old format with underscores (fallback)
+        `Entrega_${docNum}.pdf`,           // No padding: 153419
+        `Entrega_0${docNum}.pdf`,          // 1 zero: 0153419  
+        `Entrega_00${docNum}.pdf`,         // 2 zeros: 00153419
+        `Entrega_000${docNum}.pdf`,        // 3 zeros: 000153419
+        `Entrega_0000${docNum}.pdf`,       // 4 zeros: 0000153419
+        `Entrega_00000${docNum}.pdf`       // 5 zeros: 00000153419
+      ];
+      
+      for (const filename of patterns) {
+        const pdfPath = path.join(this.downloadsFolder, filename);
+        if (fs.existsSync(pdfPath)) {
+          console.log(`✅ Found PDF for Entrega ${docNum}: ${filename}`);
+          return {
+            filename: filename,
+            fullPath: pdfPath
+          };
+        }
+      }
+      
+      console.log(`❌ PDF not found for Entrega ${docNum} (tried multiple zero-padding patterns with both hyphen and underscore formats)`);
+      return null;
+    } catch (error) {
+      console.error(`❌ Error looking for PDF for Entrega ${docNum}:`, error.message);
       return null;
     }
   }
@@ -1024,8 +1112,8 @@ class EmailService {
       // Initialize SAP connection
       await this.initializeSapConnection();
       
-      // Get unsent invoices from SAP first (September 22-23, 2025)
-      const unsentInvoices = await this.getUnsentInvoicesFromSAP('2025-09-22', '2025-09-23');
+      // Get unsent invoices from SAP first (September 22nd onwards, 2025)
+      const unsentInvoices = await this.getUnsentInvoicesFromSAP('2025-09-22');
       
       if (unsentInvoices.length === 0) {
         console.log('📭 No unsent invoices found in SAP');
@@ -1036,12 +1124,20 @@ class EmailService {
         try {
           console.log(`\n📄 Processing invoice: ${invoice.FolioNumberFrom} (DocNum: ${invoice.DocNum})`);
           
+          // Check if invoice is cancelled first
+          if (this.isInvoiceCancelled(invoice)) {
+            console.log(`   ❌ Invoice ${invoice.FolioNumberFrom} is CANCELLED - marking as email sent to prevent reprocessing`);
+            await this.markEmailSentInSAP(invoice.DocEntry, 'Cancelled invoice');
+            invoiceStats.processed++;
+            continue; // Skip to next invoice
+          }
+          
           // Look for corresponding PDF file
-          const pdfFile = await this.findPDFForInvoice(invoice.FolioNumberFrom);
+          const pdfFile = await this.findPDFForInvoice(invoice.DocNum);
           if (!pdfFile) {
-            console.log(`   ⚠️ PDF not found for invoice ${invoice.FolioNumberFrom}, adding to pending list`);
+            console.log(`   ⚠️ PDF not found for invoice DocNum ${invoice.DocNum} (FolioNumber: ${invoice.FolioNumberFrom}) - NOT marking as sent, will retry when PDF is available`);
             pendingInvoices.push(invoice);
-            continue;
+            continue; // Skip to next invoice WITHOUT marking as sent in SAP
           }
           
           // Get warehouse from DocumentLines

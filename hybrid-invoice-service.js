@@ -712,30 +712,10 @@ class HybridInvoiceService {
         }
         
       } else {
-        // If no PDF, just send text message (with retry logic)
-        console.log(`📝 Sending text-only message (no PDF provided)...`);
-        let result = null;
-        let attempts = 0;
-        const maxRetries = 3;
-        
-        while (attempts < maxRetries) {
-          try {
-            attempts++;
-            console.log(`🔄 Attempt ${attempts}/${maxRetries} to send text message...`);
-            result = await this.whatsappClient.sendMessage(chatId, message);
-            console.log(`✅ Text message sent to ${phoneNumber}`);
-            console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
-            break; // Success, exit retry loop
-          } catch (error) {
-            console.log(`⚠️ Attempt ${attempts} failed:`, error.message);
-            if (attempts < maxRetries) {
-              console.log(`⏳ Waiting 2 seconds before retry...`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            } else {
-              throw error; // Re-throw after all retries failed
-            }
-          }
-        }
+        // If no PDF, don't send the message at all
+        console.log(`⚠️ No PDF provided - skipping WhatsApp message to ${phoneNumber}`);
+        console.log(`� Message would have been: ${message.substring(0, 100)}...`);
+        return false; // Return false to indicate message was not sent
       }
 
       return true;
@@ -804,7 +784,7 @@ class HybridInvoiceService {
   }
 
   async getNewInvoicesFromSAP() {
-    const fromDate = process.env.PROCESS_INVOICES_FROM_DATE || '2025-08-08';
+    const fromDate = process.env.PROCESS_INVOICES_FROM_DATE || '2025-09-22';
     
     try {
       // Get invoices that haven't been sent via WhatsApp yet

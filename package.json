@@ -41,6 +41,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^7.0.5",
     "path": "^0.12.7",
+    "pdf-parse": "^1.1.1",
     "pdf2pic": "^3.2.0",
     "pdfjs-dist": "^5.4.54",
     "puppeteer": "^21.5.2",
