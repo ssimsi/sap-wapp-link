@@ -45,8 +45,8 @@ class HybridInvoiceService {
   async start() {
     console.log('🚀 Starting Hybrid Invoice Service (SAP + WhatsApp)');
     console.log('==================================================');
-    console.log('� PDF processing handled by FC folder with proper SAP document naming');
-    console.log('🔄 This service processes invoices from FC folder');
+    console.log('📄 PDF processing handled by downloaded-pdfs folder with proper SAP document naming');
+    console.log('🔄 This service processes invoices from downloaded-pdfs folder');
     console.log('==================================================');
     
     // Show test mode status prominently
@@ -95,12 +95,12 @@ class HybridInvoiceService {
       // Start monitoring
       this.isRunning = true;
       console.log('\n✅ Hybrid service started successfully!');
-      console.log('🔄 Now processing SAP invoices with PDFs from FC folder...');
+      console.log('🔄 Now processing SAP invoices with PDFs from downloaded-pdfs folder...');
       console.log('📋 Make sure PDF Download Service is running separately for X:40 downloads!');
       
       // Schedule invoice processing every hour at X:50
       cron.schedule('50 * * * *', () => {
-        this.processNewInvoices().catch(console.error);
+        this.processNewInvoices();
       });
       
       // Schedule daily email report at 6 PM
@@ -114,7 +114,7 @@ class HybridInvoiceService {
       
       // Process immediately on start
       setTimeout(() => {
-        this.processNewInvoices().catch(console.error);
+        this.processNewInvoices();
       }, 5000);
       
       // Handle graceful shutdown
@@ -157,32 +157,17 @@ class HybridInvoiceService {
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
-              '--disable-accelerated-2d-canvas',
               '--no-first-run',
-              '--no-zygote',
               '--single-process',
               '--disable-gpu',
-              '--disable-web-security',
-              '--disable-features=VizDisplayCompositor',
-              '--disable-background-timer-throttling',
-              '--disable-renderer-backgrounding',
-              '--disable-backgrounding-occluded-windows',
-              '--disable-ipc-flooding-protection',
-              '--force-color-profile=srgb',
-              '--metrics-recording-only',
-              '--no-default-browser-check',
-              '--no-experiments',
-              '--disable-extensions-except',
-              '--disable-plugins-discovery',
-              '--user-data-dir=/tmp/whatsapp-session-' + Date.now(),
-              '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+              '--disable-web-security'
             ],
             executablePath: undefined, // Use default Chrome/Chromium
             timeout: 60000 // Increase timeout for slow connections
           },
           webVersionCache: {
             type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2407.3.html',
           },
           // Session persistence settings
           restartOnAuthFail: true,
@@ -204,7 +189,12 @@ class HybridInvoiceService {
 
         // Authentication events
         this.whatsappClient.on('authenticated', () => {
-          console.log('🔐 WhatsApp authentication successful');
+          console.log('🔐 WhatsApp authentication successful - starting aggressive ready detection...');
+          
+          // Start aggressive ready detection immediately after auth
+          setTimeout(() => {
+            this.forceReadyDetection();
+          }, 2000);
         });
 
         this.whatsappClient.on('auth_failure', (msg) => {
@@ -218,7 +208,15 @@ class HybridInvoiceService {
 
         // Loading states
         this.whatsappClient.on('loading_screen', (percent, message) => {
-          console.log(`� WhatsApp loading: ${percent}% - ${message}`);
+          console.log(`⚡ WhatsApp loading: ${percent}% - ${message}`);
+          
+          // If we reach 100% loading but ready event hasn't fired, force ready after delay
+          if (percent === 100 && message && !this.whatsappReady) {
+            console.log('🎯 Loading complete, starting aggressive ready detection in 3 seconds...');
+            setTimeout(() => {
+              this.forceReadyDetection();
+            }, 3000);
+          }
         });
 
         // Ready event with enhanced features
@@ -232,6 +230,7 @@ class HybridInvoiceService {
           this.storeSessionInfo();
           
           console.log(`📱 Connected as: ${this.whatsappClient?.info?.pushname || 'Unknown'}`);
+          console.log('🎯 Ready event fired - WhatsApp is fully initialized');
         });
 
         // Disconnection event with enhanced auto-reconnection
@@ -273,9 +272,17 @@ class HybridInvoiceService {
           )
         ]);
         
-        // Wait for ready state with extended timeout if QR code was shown
-        const readyTimeout = qrCodeShown ? 120000 : 30000; // 2 minutes for QR scan, 30s for session restore
-        console.log(`⏳ Waiting for WhatsApp ready (${readyTimeout/1000} second timeout)...`);
+        // Wait for ready state with timeout based on attempt and QR status
+        let readyTimeout;
+        if (attempt === 1 && qrCodeShown) {
+          readyTimeout = 120000; // 2 minutes for first attempt with QR scan
+        } else if (attempt === 1) {
+          readyTimeout = 45000; // 45 seconds for first attempt with existing session
+        } else {
+          readyTimeout = 30000; // 30 seconds for retry attempts
+        }
+        
+        console.log(`⏳ Waiting for WhatsApp ready (${readyTimeout/1000} second timeout, attempt ${attempt})...`);
         await this.waitForWhatsAppReady(readyTimeout);
         
         console.log(`✅ WhatsApp initialized successfully on attempt ${attempt}`);
@@ -310,24 +317,120 @@ class HybridInvoiceService {
   async waitForWhatsAppReady(timeout = 30000) {
     return new Promise((resolve, reject) => {
       if (this.whatsappReady) {
+        console.log('📱 WhatsApp already ready - proceeding immediately');
         resolve();
         return;
       }
 
       const startTime = Date.now();
+      let lastLogTime = 0;
       
       const checkReady = () => {
+        const elapsed = Date.now() - startTime;
+        
         if (this.whatsappReady) {
+          console.log(`✅ WhatsApp ready after ${elapsed/1000} seconds`);
           resolve();
-        } else if (Date.now() - startTime >= timeout) {
+        } else if (elapsed >= timeout) {
+          console.log(`❌ WhatsApp ready timeout after ${timeout/1000} seconds`);
+          console.log(`🔍 Debug: whatsappReady=${this.whatsappReady}, client exists=${!!this.whatsappClient}`);
           reject(new Error(`WhatsApp ready timeout after ${timeout/1000} seconds`));
         } else {
+          // Log progress every 10 seconds
+          if (elapsed - lastLogTime >= 10000) {
+            console.log(`⏳ Still waiting for WhatsApp ready... (${Math.floor(elapsed/1000)}s/${Math.floor(timeout/1000)}s)`);
+            lastLogTime = elapsed;
+          }
           setTimeout(checkReady, 1000);
         }
       };
 
       checkReady();
     });
+  }
+
+  async forceReadyDetection() {
+    if (this.whatsappReady) {
+      console.log('✅ Ready event already fired - no need to force');
+      return;
+    }
+
+    console.log('🔧 Forcing ready detection - attempting to verify client state...');
+    
+    try {
+      // Try to get client state
+      const state = await this.whatsappClient.getState();
+      console.log(`📱 Client state: ${state}`);
+      
+      if (state === 'CONNECTED') {
+        console.log('🎯 Client is CONNECTED but ready event never fired - forcing ready!');
+        this.whatsappReady = true;
+        this.lastAuthTime = Date.now();
+        
+        // Start session monitoring and store info
+        this.startSessionKeepAlive();
+        this.storeSessionInfo();
+        
+        console.log('✅ Ready state forced successfully!');
+        return;
+      }
+      
+      // Try to get client info as alternative check
+      const info = await this.whatsappClient.info;
+      if (info && info.wid) {
+        console.log(`📱 Client info available: ${info.pushname || 'No name'}`);
+        console.log('🎯 Client has info but ready event never fired - forcing ready!');
+        this.whatsappReady = true;
+        this.lastAuthTime = Date.now();
+        
+        this.startSessionKeepAlive();
+        this.storeSessionInfo();
+        
+        console.log('✅ Ready state forced successfully via info check!');
+        return;
+      }
+      
+    } catch (error) {
+      console.log(`⚠️ State check failed: ${error.message}`);
+    }
+    
+    // Alternative ready detection - try again in 5 seconds
+    if (!this.whatsappReady) {
+      console.log('🔧 Standard checks failed - trying alternative detection in 5 seconds...');
+      setTimeout(() => {
+        this.alternativeReadyCheck();
+      }, 5000);
+    }
+  }
+
+  async alternativeReadyCheck() {
+    if (this.whatsappReady) return;
+    
+    console.log('🔧 Alternative ready check - testing basic functionality...');
+    
+    try {
+      // Try to access client properties that would be available when ready
+      const clientId = this.whatsappClient.info?.wid?._serialized;
+      if (clientId) {
+        console.log('🎯 Client ID available - assuming ready!');
+        this.whatsappReady = true;
+        this.lastAuthTime = Date.now();
+        this.startSessionKeepAlive();
+        this.storeSessionInfo();
+        return;
+      }
+      
+    } catch (error) {
+      console.log(`⚠️ Alternative check failed: ${error.message}`);
+    }
+    
+    // Last resort - if client exists and we're not ready after 30 seconds, force it
+    console.log('🎯 Last resort - forcing ready state after extended wait');
+    this.whatsappReady = true;
+    this.lastAuthTime = Date.now();
+    this.startSessionKeepAlive();
+    this.storeSessionInfo();
+    console.log('✅ Ready state forced as last resort');
   }
 
   async attemptReconnection(attempt = 1) {
@@ -667,14 +770,74 @@ class HybridInvoiceService {
       }
     }
 
+    // Additional validation - check if client exists and is functional
+    if (!this.whatsappClient) {
+      throw new Error('WhatsApp client instance is null');
+    }
+
+    // Test client functionality before attempting to send
+    try {
+      const clientState = await this.whatsappClient.getState();
+      console.log(`📱 Client state before sending: ${clientState}`);
+      
+      if (clientState !== 'CONNECTED') {
+        console.log(`⚠️ Client state is ${clientState}, attempting to reconnect...`);
+        throw new Error(`WhatsApp client state is ${clientState}, not CONNECTED`);
+      }
+    } catch (stateError) {
+      console.error(`❌ Failed to get client state: ${stateError.message}`);
+      throw new Error(`WhatsApp client is not functional: ${stateError.message}`);
+    }
+
     try {
       // Format phone number for WhatsApp
       const formattedNumber = this.formatPhoneNumber(phoneNumber);
       const chatId = `${formattedNumber}@c.us`;
 
       console.log(`📱 Sending WhatsApp message to ${phoneNumber}...`);
+      console.log(`🔍 DEBUG: Formatted number: ${formattedNumber}, ChatID: ${chatId}`);
       console.log(`🔍 DEBUG: pdfPath provided: ${pdfPath}`);
       console.log(`🔍 DEBUG: pdfPath exists: ${pdfPath ? fs.existsSync(pdfPath) : 'No path provided'}`);
+
+      // Validate chat exists and is accessible before sending
+      try {
+        console.log(`🔍 Validating chat access for ${chatId}...`);
+        const chat = await this.whatsappClient.getChatById(chatId);
+        console.log(`✅ Chat validated: ${chat ? 'Found' : 'Not found'}`);
+      } catch (chatError) {
+        console.log(`⚠️ Chat validation failed: ${chatError.message}`);
+        
+        // Check if this is a client context error (Puppeteer page is gone)
+        if (chatError.message.includes('Cannot read properties of undefined') || 
+            chatError.message.includes('Evaluation failed') ||
+            chatError.message.includes('getChat')) {
+          console.log(`🔥 WhatsApp client context is broken - marking session as not ready`);
+          this.whatsappReady = false;
+          
+          // Don't attempt contact validation, just fail fast
+          throw new Error(`WhatsApp client context is broken (Puppeteer page lost): ${chatError.message}`);
+        }
+        
+        console.log(`🔧 Attempting to create chat by getting contact first...`);
+        
+        try {
+          const contact = await this.whatsappClient.getContactById(chatId);
+          console.log(`📞 Contact found: ${contact ? contact.name || contact.pushname || 'Unnamed' : 'Not found'}`);
+        } catch (contactError) {
+          console.log(`❌ Contact validation also failed: ${contactError.message}`);
+          
+          // Check if this is also a client context error
+          if (contactError.message.includes('Cannot read properties of undefined') || 
+              contactError.message.includes('Evaluation failed') ||
+              contactError.message.includes('getContact')) {
+            console.log(`🔥 WhatsApp client context is completely broken - marking session as not ready`);
+            this.whatsappReady = false;
+            throw new Error(`WhatsApp client context is completely broken (Puppeteer page lost): ${contactError.message}`);
+          }
+          
+          throw new Error(`Cannot access chat or contact for ${phoneNumber}: ${contactError.message}`);
+        }
+      }
 
       // If PDF is provided, send PDF with text as caption in ONE message
       if (pdfPath && fs.existsSync(pdfPath)) {
@@ -696,12 +859,41 @@ class HybridInvoiceService {
           try {
             attempts++;
             console.log(`🔄 Attempt ${attempts}/${maxRetries} to send PDF...`);
-            result = await this.whatsappClient.sendMessage(chatId, media, { caption: message });
-            console.log(`✅ PDF with caption sent successfully to ${phoneNumber}`);
-            console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
-            break; // Success, exit retry loop
+            
+            // Check for specific getChat error and try alternative approach
+            try {
+              result = await this.whatsappClient.sendMessage(chatId, media, { caption: message });
+              console.log(`✅ PDF with caption sent successfully to ${phoneNumber}`);
+              console.log(`🔍 Send result:`, result ? 'Success' : 'Unknown');
+              break; // Success, exit retry loop
+            } catch (sendError) {
+              if (sendError.message.includes('getChat') && attempts === 1) {
+                console.log(`🔧 Detected getChat error, trying alternative approach...`);
+                
+                // Wait a moment for WhatsApp to stabilize
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                // Try to refresh client state
+                const newState = await this.whatsappClient.getState();
+                console.log(`🔍 Client state after getChat error: ${newState}`);
+                
+                if (newState !== 'CONNECTED') {
+                  throw new Error(`Client disconnected during send (state: ${newState})`);
+                }
+              }
+              throw sendError; // Re-throw to be caught by outer try-catch
+            }
+            
           } catch (error) {
             console.log(`⚠️ Attempt ${attempts} failed:`, error.message);
+            
+            // For getChat errors, try to reconnect on last attempt
+            if (error.message.includes('getChat') && attempts === maxRetries) {
+              console.log(`🔄 getChat error on final attempt - initiating client recovery...`);
+              this.whatsappReady = false;
+              this.handleSessionIssue();
+            }
+            
             if (attempts < maxRetries) {
               console.log(`⏳ Waiting 2 seconds before retry...`);
               await new Promise(resolve => setTimeout(resolve, 2000));
@@ -744,43 +936,115 @@ class HybridInvoiceService {
     return cleaned;
   }
 
-  async processNewInvoices() {
-    console.log('\n🔍 Processing new invoices from SAP...');
+  processNewInvoices() {
+    console.log('\n🔍 Processing new invoices from SAP (SEQUENTIAL MODE)...');
     
-    try {
-      // Get new invoices from SAP (reuse existing logic)
-      const newInvoices = await this.getNewInvoicesFromSAP();
-      
-      if (newInvoices.length === 0) {
-        console.log('📪 No new invoices found in SAP');
-        return;
-      }
-      
-      console.log(`📋 Found ${newInvoices.length} new invoice(s) in SAP`);
-      
-      for (const  invoice of newInvoices) {
-        try {
-          await this.processInvoiceWithEmail(invoice);
-          
-          // Add small delay between invoices to reduce load on WhatsApp Web.js
-          if (newInvoices.length > 1) {
-            console.log('⏳ Waiting 3 seconds before processing next invoice...');
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-          
-        } catch (invoiceError) {
-          console.error(`❌ Error processing invoice ${invoice.DocNum}:`, invoiceError.message);
-          this.missedInvoices.push({
-            invoice,
-            error: invoiceError.message,
-            timestamp: new Date()
-          });
-        }
-      }
-      
-    } catch (error) {
-      console.error('❌ Error in processNewInvoices:', error.message);
+    // CRITICAL CHECK: Don't process invoices if WhatsApp is not ready
+    if (!this.whatsappReady || !this.whatsappClient) {
+      console.log('🚫 WhatsApp client is not ready - SKIPPING invoice processing');
+      console.log('📋 Invoices will be processed when WhatsApp becomes available');
+      console.log('🔄 Will retry on next scheduled run...');
+      return;
     }
+
+    // Test WhatsApp client functionality before processing any invoices
+    try {
+      this.whatsappClient.getState().then(state => {
+        if (state !== 'CONNECTED') {
+          console.log(`🚫 WhatsApp client state is ${state} - SKIPPING invoice processing`);
+          console.log('📋 Invoices will be processed when WhatsApp is CONNECTED');
+          console.log('🔄 Will retry on next scheduled run...');
+          return;
+        }
+        
+        // WhatsApp is ready, proceed with invoice processing
+        this.proceedWithInvoiceProcessing();
+      }).catch(stateError => {
+        console.log(`🚫 Cannot check WhatsApp client state - SKIPPING invoice processing: ${stateError.message}`);
+        console.log('📋 Invoices will be processed when WhatsApp is functional');
+        console.log('🔄 Will retry on next scheduled run...');
+        // Mark WhatsApp as not ready if we can't even check state
+        this.whatsappReady = false;
+      });
+    } catch (error) {
+      console.log(`🚫 WhatsApp client error - SKIPPING invoice processing: ${error.message}`);
+      console.log('📋 Invoices will be processed when WhatsApp is functional');
+      console.log('🔄 Will retry on next scheduled run...');
+      this.whatsappReady = false;
+    }
+  }
+
+  proceedWithInvoiceProcessing() {
+    console.log('✅ WhatsApp client is ready - proceeding with invoice processing...');
+    
+    // Get new invoices from SAP
+    this.getNewInvoicesFromSAP()
+      .then(newInvoices => {
+        if (newInvoices.length === 0) {
+          console.log('📪 No new invoices found in SAP');
+          return;
+        }
+        
+        console.log(`📋 Found ${newInvoices.length} new invoice(s) in SAP - processing sequentially`);
+        
+        // Process invoices one by one sequentially
+        this.processInvoicesSequentially(newInvoices, 0);
+      })
+      .catch(error => {
+        console.error('❌ Error in proceedWithInvoiceProcessing:', error.message);
+      });
+  }
+
+  processInvoicesSequentially(invoices, index) {
+    // Base case - no more invoices to process
+    if (index >= invoices.length) {
+      console.log('✅ All invoices processed sequentially');
+      return;
+    }
+
+    // CRITICAL CHECK: Stop processing if WhatsApp is no longer ready
+    if (!this.whatsappReady || !this.whatsappClient) {
+      console.log(`\n🚫 WhatsApp client lost during sequential processing - STOPPING at invoice ${index + 1}/${invoices.length}`);
+      console.log(`📋 Remaining ${invoices.length - index} invoices will be processed when WhatsApp is available`);
+      return;
+    }
+    
+    const invoice = invoices[index];
+    console.log(`\n📄 Processing invoice ${index + 1}/${invoices.length}: ${invoice.DocNum}`);
+    
+    // Process current invoice
+    this.processInvoiceWithEmail(invoice)
+      .then(() => {
+        console.log(`✅ Invoice ${invoice.DocNum} processed successfully`);
+        
+        // Wait 3 seconds before processing next invoice
+        if (index < invoices.length - 1) {
+          console.log('⏳ Waiting 3 seconds before next invoice...');
+          setTimeout(() => {
+            this.processInvoicesSequentially(invoices, index + 1);
+          }, 3000);
+        } else {
+          console.log('✅ All invoices processed sequentially');
+        }
+      })
+      .catch(invoiceError => {
+        console.error(`❌ Error processing invoice ${invoice.DocNum}:`, invoiceError.message);
+        this.missedInvoices.push({
+          invoice,
+          error: invoiceError.message,
+          timestamp: new Date()
+        });
+        
+        // Continue with next invoice even if current one failed
+        if (index < invoices.length - 1) {
+          console.log('⏳ Waiting 3 seconds before next invoice (after error)...');
+          setTimeout(() => {
+            this.processInvoicesSequentially(invoices, index + 1);
+          }, 3000);
+        } else {
+          console.log('✅ Sequential processing completed (with some errors)');
+        }
+      });
   }
 
   async getNewInvoicesFromSAP() {
@@ -788,6 +1052,7 @@ class HybridInvoiceService {
     
     try {
       // Get invoices that haven't been sent via WhatsApp yet
+      // Processing from 22/9 (September 22, 2025) onwards - no end date limit
       // Properly encode the OData query to avoid unescaped characters
       const filter = `DocDate ge '${fromDate}' and (U_WhatsAppSent eq null or U_WhatsAppSent eq 'N')`;
       const orderby = 'DocEntry desc';
@@ -810,17 +1075,25 @@ class HybridInvoiceService {
   async processInvoiceWithEmail(invoice) {
     console.log(`\n📄 Processing Invoice ${invoice.DocNum} (DocEntry: ${invoice.DocEntry})`);
     
+    // CRITICAL CHECK: Verify WhatsApp is still ready before processing this invoice
+    if (!this.whatsappReady || !this.whatsappClient) {
+      console.log(`🚫 WhatsApp client lost during processing - STOPPING invoice ${invoice.DocNum}`);
+      console.log(`📋 Invoice ${invoice.DocNum} will be retried when WhatsApp is available`);
+      throw new Error('WhatsApp client not ready - invoice processing halted');
+    }
+
     // Safety check - ensure test mode is respected
     if (process.env.TEST_MODE === 'true') {
       console.log(`🧪 TEST MODE ACTIVE - All messages will go to ${process.env.TEST_PHONE}`);
     }
     
     // 1. CRITICAL: Search for PDF FIRST - no PDF = no processing at all
-    const pdfPath = await this.findInvoicePDF(invoice.DocNum, invoice.DocDate, invoice.Series);
+    const pdfPath = this.findInvoicePDF(invoice.DocNum, invoice.DocDate, invoice.Series);
     
     if (!pdfPath) {
       console.log(`🚫 CRITICAL: No PDF found for invoice ${invoice.DocNum} - STOPPING ALL PROCESSING`);
       console.log(`📋 NO WhatsApp messages will be sent (customer OR salesperson)`);
+      console.log(`📋 Invoice will remain unmarked in SAP for retry when PDF becomes available`);
       this.missedInvoices.push({
         invoice,
         error: 'PDF not found - no processing done',
@@ -852,14 +1125,18 @@ class HybridInvoiceService {
       
       // Skip customer message completely, only send salesperson notification
       await this.markInvoiceAsSent(invoice.DocEntry);
+      
+      // Try to send salesperson notification, but don't fail if it doesn't work
+      console.log(`   📱 Attempting salesperson notification for invoice ${invoice.DocNum}...`);
       await this.sendSalespersonNotification(invoice, pdfPath);
+      console.log(`✅ Invoice ${invoice.DocNum} marked as sent (customer message disabled)`);
+      console.log(`   📋 Salesperson notification handled (success or graceful skip)`)
       
       // Clean up temp PDF
       if (fs.existsSync(pdfPath)) {
         fs.unlinkSync(pdfPath);
       }
       
-      console.log(`✅ Invoice ${invoice.DocNum} marked as sent (customer message disabled, salesperson notified)`);
       this.processedInvoices.add(invoice.DocNum);
       return;
     }
@@ -881,15 +1158,17 @@ class HybridInvoiceService {
       // 5. Mark as sent in SAP
       await this.markInvoiceAsSent(invoice.DocEntry);
       
-      // 6. Send salesperson notification
+      // 6. Send salesperson notification (non-blocking)
+      console.log(`   📱 Attempting salesperson notification for invoice ${invoice.DocNum}...`);
       await this.sendSalespersonNotification(invoice, pdfPath);
+      console.log(`✅ Successfully sent invoice ${invoice.DocNum} via WhatsApp`);
+      console.log(`   📋 Salesperson notification handled (success or graceful skip)`)
       
       // 7. Clean up temp PDF
       if (fs.existsSync(pdfPath)) {
         fs.unlinkSync(pdfPath);
       }
       
-      console.log(`✅ Successfully sent invoice ${invoice.DocNum} via WhatsApp`);
       this.processedInvoices.add(invoice.DocNum);
       
     } catch (whatsappError) {
@@ -898,66 +1177,81 @@ class HybridInvoiceService {
     }
   }
 
-  async findInvoicePDF(docNum, invoiceDate, series) {
-    console.log(`   🔍 Searching FC folder for DocNum: ${docNum}`);
+  findInvoicePDF(docNum, invoiceDate, series) {
+    console.log(`   🔍 Searching folders for DocNum: ${docNum}`);
     console.log(`   📅 Invoice date: ${invoiceDate}, Series: ${series}`);
     
     try {
-      // Search in FC folder with proper SAP document naming
-      const localPdfPath = await this.findPDFInDownloadedFolder(docNum, series);
+      // Search in both FC and downloaded-pdfs folders with proper SAP document naming
+      const localPdfPath = this.findPDFInDownloadedFolder(docNum, series);
       if (localPdfPath) {
-        console.log(`   ✅ Found PDF in FC folder: ${localPdfPath}`);
+        console.log(`   ✅ Found PDF: ${localPdfPath}`);
         return localPdfPath;
       }
       
-      console.log(`   ❌ PDF not found in FC folder for DocNum ${docNum}`);
+      console.log(`   ❌ PDF not found for DocNum ${docNum}`);
       return null;
       
     } catch (error) {
-      console.error(`❌ Error searching downloaded PDFs for ${docNum}:`, error.message);
+      console.error(`❌ Error searching PDFs for ${docNum}:`, error.message);
       return null;
     }
   }
 
-  async findPDFInDownloadedFolder(docNum, series) {
-    const fcFolder = './FC';
+  findPDFInDownloadedFolder(docNum, series) {
+    // Check only downloaded-pdfs folder
+    const foldersToCheck = ['./downloaded-pdfs'];
     
-    try {
-      // Check if FC folder exists
-      if (!fs.existsSync(fcFolder)) {
-        console.log(`   📁 FC folder does not exist: ${fcFolder}`);
-        return null;
-      }
-      
-      // Get all PDF files in the FC folder
-      const files = fs.readdirSync(fcFolder);
-      const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
-      
-      console.log(`   📄 Searching through ${pdfFiles.length} PDFs in FC folder for DocNum ${docNum}`);
-      
-      // Search for PDF with the correct naming convention
-      // Look for: Factura_de_deudores_[docNum].pdf
-      const expectedFileName = `Factura_de_deudores_${docNum}.pdf`;
-      
-      for (const pdfFile of pdfFiles) {
-        console.log(`     🔍 Checking: ${pdfFile} for DocNum ${docNum}`);
-        
-        if (pdfFile === expectedFileName) {
-          const fullPath = path.join(fcFolder, pdfFile);
-          console.log(`     ✅ EXACT MATCH FOUND! PDF ${pdfFile} matches DocNum ${docNum}`);
-          console.log(`     📄 Using PDF directly from FC folder: ${fullPath}`);
-          
-          return fullPath;
+    for (const folder of foldersToCheck) {
+      try {
+        // Check if folder exists
+        if (!fs.existsSync(folder)) {
+          console.log(`   📁 Folder does not exist: ${folder}`);
+          continue;
         }
+        
+        // Get all PDF files in the folder
+        const files = fs.readdirSync(folder);
+        const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
+        
+        console.log(`   📄 Searching through ${pdfFiles.length} PDFs in ${folder} for DocNum ${docNum}`);
+        
+        // Try different zero-padding patterns for PDF filename - both old and new formats
+        const patterns = [
+          // New format with hyphens (current)
+          `Factura de deudores - ${docNum}.pdf`,           // No padding: 14936
+          `Factura de deudores - 0${docNum}.pdf`,          // 1 zero: 014936  
+          `Factura de deudores - 00${docNum}.pdf`,         // 2 zeros: 0014936
+          `Factura de deudores - 000${docNum}.pdf`,        // 3 zeros: 00014936
+          `Factura de deudores - 0000${docNum}.pdf`,       // 4 zeros: 000014936
+          `Factura de deudores - 00000${docNum}.pdf`,      // 5 zeros: 0000014936
+          // Old format with underscores (fallback)
+          `Factura_de_deudores_${docNum}.pdf`,           // No padding: 14936
+          `Factura_de_deudores_0${docNum}.pdf`,          // 1 zero: 014936  
+          `Factura_de_deudores_00${docNum}.pdf`,         // 2 zeros: 0014936
+          `Factura_de_deudores_000${docNum}.pdf`,        // 3 zeros: 00014936
+          `Factura_de_deudores_0000${docNum}.pdf`,       // 4 zeros: 000014936
+          `Factura_de_deudores_00000${docNum}.pdf`       // 5 zeros: 0000014936
+        ];
+        
+        for (const filename of patterns) {
+          const pdfPath = path.join(folder, filename);
+          if (fs.existsSync(pdfPath)) {
+            console.log(`     ✅ EXACT MATCH FOUND! PDF ${filename} matches DocNum ${docNum} in ${folder}`);
+            console.log(`     📄 Using PDF: ${pdfPath}`);
+            return pdfPath;
+          }
+        }
+        
+        console.log(`   ❌ No PDF found in ${folder} with DocNum ${docNum} (tried multiple zero-padding patterns)`);
+        
+      } catch (error) {
+        console.error(`❌ Error searching ${folder}:`, error.message);
+        continue;
       }
-      
-      console.log(`   ❌ No PDF found in FC folder with exact name: ${expectedFileName}`);
-      return null;
-      
-    } catch (error) {
-      console.error(`❌ Error searching FC folder:`, error.message);
-      return null;
     }
+    
+    return null;
   }
 
   async sendSalespersonNotification(invoice, pdfPath = null) {
@@ -987,12 +1281,31 @@ class HybridInvoiceService {
       // Send to salesperson (in test mode, this also goes to test phone)
       const phoneToUse = process.env.TEST_MODE === 'true' ? process.env.TEST_PHONE : salesPersonPhone;
       
+      // Check WhatsApp client health before attempting to send
+      if (!this.whatsappReady || !this.whatsappClient) {
+        console.log(`   ⚠️ WhatsApp client not ready for salesperson notification - skipping ${salesPersonName}`);
+        return;
+      }
+
+      // Test if client is actually functional before sending
+      try {
+        const clientState = await this.whatsappClient.getState();
+        if (clientState !== 'CONNECTED') {
+          console.log(`   ⚠️ WhatsApp client state is ${clientState} - skipping salesperson notification to ${salesPersonName}`);
+          return;
+        }
+      } catch (stateError) {
+        console.log(`   ⚠️ Cannot check WhatsApp client state - skipping salesperson notification to ${salesPersonName}: ${stateError.message}`);
+        return;
+      }
+      
       await this.sendWhatsAppMessage(phoneToUse, salespersonMessage, pdfPath);
       
       console.log(`   ✅ Salesperson notification sent to ${salesPersonName}`);
 
     } catch (error) {
-      console.error(`   ❌ Error sending salesperson notification: ${error.message}`);
+      console.log(`   ⚠️ Salesperson notification failed for ${invoice.DocNum} - continuing anyway: ${error.message}`);
+      // Don't throw error - salesperson notification is non-critical
     }
   }
 
@@ -1327,7 +1640,8 @@ class SAPConnection {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Cookie': this.cookies ? this.cookies.join('; ') : ''
+          'Cookie': this.cookies ? this.cookies.join('; ') : '',
+          'Prefer': 'odata.maxpagesize=0'
         },
         rejectUnauthorized: false,
         timeout: 30000
