@@ -1,4 +1,5 @@
 .wwebjs_auth/
+.wwebjs_auth_*/
 .wwebjs_cache/
 node_modules/
 .env
@@ -10,3 +11,7 @@ downloaded-pdfs/
 # WhatsApp Session Data (exclude all session files - these are local only)
 whatsapp-session/
 whatsapp-session-backup/
+
+# Test session folders
+.wwebjs_test_auth/
+.wwebjs_auth_aggressive/
