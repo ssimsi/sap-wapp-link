@@ -18,6 +18,7 @@ dotenv.config({ path: '.env.local' });
 class PDFCleanupService {
   constructor() {
     this.downloadedPdfFolder = process.env.DOWNLOADED_PDF_FOLDER || './downloaded-pdfs';
+    this.retentionDays = parseInt(process.env.PDF_RETENTION_DAYS) || 30; // Default 30 days
     this.isRunning = false;
     this.sapConnection = null;
   }
