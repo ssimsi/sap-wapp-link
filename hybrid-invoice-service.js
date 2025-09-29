@@ -977,15 +977,16 @@ class HybridInvoiceService {
   proceedWithInvoiceProcessing() {
     console.log('✅ WhatsApp client is ready - proceeding with invoice processing...');
     
-    // Get new invoices from SAP
+    // Get new invoices from SAP (only those with available PDFs)
     this.getNewInvoicesFromSAP()
       .then(newInvoices => {
         if (newInvoices.length === 0) {
-          console.log('📪 No new invoices found in SAP');
+          console.log('📪 No new invoices with available PDFs found');
+          console.log('📋 Invoices without PDFs will be processed when PDFs become available');
           return;
         }
         
-        console.log(`📋 Found ${newInvoices.length} new invoice(s) in SAP - processing sequentially`);
+        console.log(`📋 Found ${newInvoices.length} invoice(s) with PDFs ready for processing - starting sequential processing`);
         
         // Process invoices one by one sequentially
         this.processInvoicesSequentially(newInvoices, 0);
@@ -1058,13 +1059,43 @@ class HybridInvoiceService {
       const orderby = 'DocEntry desc';
       const select = 'DocEntry,DocNum,CardCode,CardName,DocTotal,DocDate,Series,SalesPersonCode,U_WhatsAppSent,U_WhatsAppDate,U_WhatsAppPhone,Comments';
       
-      const query = `/b1s/v1/Invoices?${encodeURI(`$filter=${filter}&$orderby=${orderby}&$top=50&$select=${select}`)}`;
+      // Fetch more invoices to account for those without PDFs
+      const query = `/b1s/v1/Invoices?${encodeURI(`$filter=${filter}&$orderby=${orderby}&$top=200&$select=${select}`)}`;
       
       console.log('🔍 SAP Query:', query);
       
       const invoicesResponse = await this.sapConnection.makeRequest(query);
+      const allInvoices = invoicesResponse.value || [];
       
-      return invoicesResponse.value || [];
+      console.log(`📋 Retrieved ${allInvoices.length} invoices from SAP, filtering for those with PDFs...`);
+      
+      // Filter invoices to only include those with available PDFs
+      const invoicesWithPDFs = [];
+      let checkedCount = 0;
+      
+      for (const invoice of allInvoices) {
+        checkedCount++;
+        
+        // Check if PDF exists for this invoice
+        const pdfPath = this.findInvoicePDF(invoice.DocNum, invoice.DocDate, invoice.Series);
+        
+        if (pdfPath) {
+          console.log(`   ✅ Invoice ${invoice.DocNum} has PDF - adding to processing queue`);
+          invoicesWithPDFs.push(invoice);
+          
+          // Stop when we have enough invoices with PDFs (max 50)
+          if (invoicesWithPDFs.length >= 50) {
+            console.log(`📋 Found 50 invoices with PDFs, stopping search`);
+            break;
+          }
+        } else {
+          console.log(`   ⏭️  Invoice ${invoice.DocNum} has no PDF - skipping (checked ${checkedCount}/${allInvoices.length})`);
+        }
+      }
+      
+      console.log(`📊 Final result: ${invoicesWithPDFs.length} invoices with PDFs found (checked ${checkedCount} total invoices)`);
+      
+      return invoicesWithPDFs;
       
     } catch (error) {
       console.error('❌ Error getting invoices from SAP:', error.message);
@@ -1087,22 +1118,22 @@ class HybridInvoiceService {
       console.log(`🧪 TEST MODE ACTIVE - All messages will go to ${process.env.TEST_PHONE}`);
     }
     
-    // 1. CRITICAL: Search for PDF FIRST - no PDF = no processing at all
+    // 1. Get PDF path (we already verified it exists in getNewInvoicesFromSAP)
     const pdfPath = this.findInvoicePDF(invoice.DocNum, invoice.DocDate, invoice.Series);
     
-    if (!pdfPath) {
-      console.log(`🚫 CRITICAL: No PDF found for invoice ${invoice.DocNum} - STOPPING ALL PROCESSING`);
-      console.log(`📋 NO WhatsApp messages will be sent (customer OR salesperson)`);
-      console.log(`📋 Invoice will remain unmarked in SAP for retry when PDF becomes available`);
+    // Double-check PDF still exists (in case it was cleaned up between query and processing)
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      console.log(`🚫 PDF for invoice ${invoice.DocNum} no longer exists - skipping`);
+      console.log(`📋 This invoice will be retried on next run if PDF becomes available`);
       this.missedInvoices.push({
         invoice,
-        error: 'PDF not found - no processing done',
+        error: 'PDF disappeared between query and processing',
         timestamp: new Date()
       });
       return;
     }
     
-    console.log(`✅ PDF found for invoice ${invoice.DocNum} - proceeding with message generation`);
+    console.log(`✅ PDF confirmed for invoice ${invoice.DocNum} - proceeding with message generation`);
     
     // 2. Generate WhatsApp message from SAP data
     const whatsappMessage = this.generateWhatsAppMessage(invoice);
@@ -1182,7 +1213,7 @@ class HybridInvoiceService {
     console.log(`   📅 Invoice date: ${invoiceDate}, Series: ${series}`);
     
     try {
-      // Search in both FC and downloaded-pdfs folders with proper SAP document naming
+      // Search in downloaded-pdfs folder with proper SAP document naming
       const localPdfPath = this.findPDFInDownloadedFolder(docNum, series);
       if (localPdfPath) {
         console.log(`   ✅ Found PDF: ${localPdfPath}`);
