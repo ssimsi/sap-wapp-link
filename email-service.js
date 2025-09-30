@@ -55,6 +55,7 @@ import axios from 'axios';
 import https from 'https';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import PDFCleanupService from './pdf-cleanup-service.js';
 
 // Load environment variables from .env.local
 dotenv.config({ path: '.env.local' });
@@ -71,6 +72,7 @@ class EmailService {
     this.sapConnection = null;
     this.emailTransporter = null;
     this.sapSessionId = null;
+    this.pdfCleanupService = new PDFCleanupService();
     
     // SAP Configuration from env.local
     this.sapConfig = {
@@ -1223,6 +1225,9 @@ class EmailService {
       // Send summary report to ssimsi@gmail.com
       await this.sendProcessingSummary(invoiceStats, entregaStats, pendingInvoices, pendingEntregas);
       
+      // Run PDF cleanup after all email processing
+      await this.runPDFCleanup();
+      
     } catch (error) {
       console.error('💥 Fatal error in email service:', error.message);
       
@@ -1234,6 +1239,35 @@ class EmailService {
       } catch (reportError) {
         console.error('❌ Failed to send error report:', reportError.message);
       }
+      
+      // Run PDF cleanup even after errors
+      await this.runPDFCleanup();
+    }
+  }
+
+  /**
+   * Run PDF cleanup after processing emails
+   */
+  async runPDFCleanup() {
+    try {
+      console.log('\n🧹 Running post-processing PDF cleanup...');
+      console.log('==========================================');
+      console.log('⏳ Waiting 5 seconds for SAP status updates to propagate...');
+      
+      // Give SAP a moment to update the status fields
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      const result = await this.pdfCleanupService.performCleanup();
+      
+      if (result) {
+        console.log(`✅ PDF cleanup completed: ${result.filesDeleted} files deleted`);
+      } else {
+        console.log('ℹ️  PDF cleanup completed with no changes');
+      }
+      
+    } catch (error) {
+      console.error('❌ PDF cleanup failed:', error.message);
+      // Don't throw - cleanup failure shouldn't stop the service
     }
   }
 }

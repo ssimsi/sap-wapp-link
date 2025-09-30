@@ -30,7 +30,7 @@ class PDFCleanupService {
     console.log('🧹 Starting PDF Cleanup Service');
     console.log('================================');
     console.log(`📁 Monitoring folder: ${this.downloadedPdfFolder}`);
-    console.log(`📋 Cleanup Rule: Only delete PDFs with BOTH EmailSent='Y' AND WhatsAppSent='Y'`);
+    console.log(`📋 Cleanup Rule: Invoices need BOTH Email+WhatsApp='Y', Deliveries need only Email='Y'`);
     console.log(`⏰ Schedule: Daily at 5:00 AM`);
     console.log('');
 
@@ -248,7 +248,7 @@ class PDFCleanupService {
     }
 
     console.log(`📁 Smart cleaning Downloaded PDFs: ${this.downloadedPdfFolder}`);
-    console.log(`   📋 Rule: Delete immediately if both EmailSent='Y' AND WhatsAppSent='Y' (no age restriction)`);
+    console.log(`   📋 Rule: Invoices require BOTH Email='Y' AND WhatsApp='Y', Deliveries require only Email='Y'`);
     
     let deletedCount = 0;
     let deletedSize = 0;
@@ -282,8 +282,11 @@ class PDFCleanupService {
             continue;
           }
 
-          // Check SAP status - no age restriction, delete immediately if both are sent
-          const canDelete = await this.checkInvoiceStatusInSAP(docNum);
+          // Determine document type
+          const documentType = this.getDocumentType(file);
+
+          // Check SAP status - no age restriction, delete immediately if sent
+          const canDelete = await this.checkInvoiceStatusInSAP(docNum, documentType);
           
           if (canDelete) {
             // File is safe to delete
@@ -316,17 +319,29 @@ class PDFCleanupService {
    * Extract DocNum from PDF filename
    */
   extractDocNumFromFilename(filename) {
-    // Handle both formats: "Factura de deudores - 15566.pdf" and "Factura_de_deudores_15566.pdf"
+    // Handle multiple document types and formats
     let match;
     
-    // Try hyphen format first (current format)
+    // Try Invoice hyphen format: "Factura de deudores - 15566.pdf"
     match = filename.match(/Factura de deudores - (\d+)\.pdf$/);
     if (match) {
       return match[1];
     }
     
-    // Try underscore format (old format)
+    // Try Invoice underscore format (old format): "Factura_de_deudores_15566.pdf"
     match = filename.match(/Factura_de_deudores_(\d+)\.pdf$/);
+    if (match) {
+      return match[1];
+    }
+    
+    // Try Delivery format: "Entrega - 16398.pdf"
+    match = filename.match(/Entrega - (\d+)\.pdf$/);
+    if (match) {
+      return match[1];
+    }
+    
+    // Try Credit Note format: "Nota de crédito de clientes - 1356.pdf"
+    match = filename.match(/Nota de crédito de clientes - (\d+)\.pdf$/);
     if (match) {
       return match[1];
     }
@@ -342,29 +357,70 @@ class PDFCleanupService {
   }
 
   /**
-   * Check if invoice has both email and WhatsApp sent in SAP
+   * Determine document type from filename
    */
-  async checkInvoiceStatusInSAP(docNum) {
+  getDocumentType(filename) {
+    if (filename.includes('Factura de deudores')) return 'Invoice';
+    if (filename.includes('Entrega')) return 'Delivery';
+    if (filename.includes('Nota de crédito')) return 'CreditNote';
+    return 'Unknown';
+  }
+
+  /**
+   * Check if document has appropriate sent status in SAP (depends on document type)
+   */
+  async checkInvoiceStatusInSAP(docNum, documentType) {
     try {
+      // Query different SAP tables based on document type
+      let sapEndpoint, docType;
+      
+      switch (documentType) {
+        case 'Invoice':
+          sapEndpoint = 'Invoices';
+          docType = 'Invoice';
+          break;
+        case 'Delivery':
+          sapEndpoint = 'DeliveryNotes';
+          docType = 'Delivery';
+          break;
+        case 'CreditNote':
+          sapEndpoint = 'CreditNotes';
+          docType = 'Credit Note';
+          break;
+        default:
+          console.log(`   ⚠️  Unknown document type ${documentType} for DocNum ${docNum} - keeping PDF`);
+          return false;
+      }
+      
       // Query SAP for this specific DocNum (DocNum is a NUMBER field, don't use quotes)
       const filter = `DocNum eq ${docNum}`;
       const select = 'DocNum,U_EmailSent,U_WhatsAppSent';
-      const query = `/b1s/v1/Invoices?${encodeURI(`$filter=${filter}&$select=${select}&$top=1`)}`;
+      const query = `/b1s/v1/${sapEndpoint}?${encodeURI(`$filter=${filter}&$select=${select}&$top=1`)}`;
       
       const response = await this.makeSAPRequest(query);
       
       if (response.value && response.value.length > 0) {
-        const invoice = response.value[0];
-        const emailSent = invoice.U_EmailSent === 'Y';
-        const whatsappSent = invoice.U_WhatsAppSent === 'Y';
+        const document = response.value[0];
+        const emailSent = document.U_EmailSent === 'Y';
+        const whatsappSent = document.U_WhatsAppSent === 'Y';
         
-        console.log(`   📋 DocNum ${docNum}: Email=${invoice.U_EmailSent || 'N'}, WhatsApp=${invoice.U_WhatsAppSent || 'N'}`);
+        console.log(`   📋 ${docType} ${docNum}: Email=${document.U_EmailSent || 'N'}, WhatsApp=${document.U_WhatsAppSent || 'N'}`);
         
-        // Only delete if BOTH are sent
-        return emailSent && whatsappSent;
+        // Apply document-type-specific deletion rules
+        switch (documentType) {
+          case 'Invoice':
+          case 'CreditNote':
+            // Invoices and credit notes: delete only when BOTH email AND WhatsApp are sent
+            return emailSent && whatsappSent;
+          case 'Delivery':
+            // Deliveries: delete when email is sent (WhatsApp not used for deliveries)
+            return emailSent;
+          default:
+            return false;
+        }
       } else {
-        console.log(`   ⚠️  DocNum ${docNum} not found in SAP - keeping PDF as safety measure`);
-        return false; // Keep PDF if we can't find the invoice
+        console.log(`   ⚠️  ${docType} ${docNum} not found in SAP - keeping PDF as safety measure`);
+        return false; // Keep PDF if we can't find the document
       }
       
     } catch (error) {
@@ -480,7 +536,7 @@ class PDFCleanupService {
       downloadedPdfFolder: this.downloadedPdfFolder,
       isRunning: this.isRunning,
       nextCleanup: '5:00 AM daily',
-      cleanupRule: 'Smart cleanup: Only delete PDFs with both EmailSent=Y and WhatsAppSent=Y'
+      cleanupRule: 'Smart cleanup: Invoices need BOTH Email+WhatsApp=Y, Deliveries need only Email=Y'
     };
 
     // Get current folder sizes

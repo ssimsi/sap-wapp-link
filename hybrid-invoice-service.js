@@ -158,12 +158,34 @@ class HybridInvoiceService {
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
               '--no-first-run',
-              '--single-process',
               '--disable-gpu',
-              '--disable-web-security'
+              '--disable-web-security',
+              '--disable-background-timer-throttling',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-renderer-backgrounding',
+              '--disable-features=TranslateUI,VizDisplayCompositor',
+              '--disable-ipc-flooding-protection',
+              '--disable-background-networking',
+              '--disable-hang-monitor',
+              '--disable-prompt-on-repost',
+              '--disable-sync',
+              '--disable-translate',
+              '--metrics-recording-only',
+              '--no-default-browser-check',
+              '--safebrowsing-disable-auto-update',
+              '--disable-client-side-phishing-detection',
+              '--disable-component-extensions-with-background-pages',
+              '--disable-default-apps',
+              '--disable-domain-reliability',
+              '--no-pings'
             ],
-            executablePath: undefined, // Use default Chrome/Chromium
-            timeout: 60000 // Increase timeout for slow connections
+            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Explicit Chrome path
+            timeout: 120000, // 2 minutes timeout
+            handleSIGINT: false,
+            handleSIGTERM: false, 
+            handleSIGHUP: false,
+            ignoreDefaultArgs: ['--disable-extensions'], // Allow some extensions that might be needed
+            devtools: false
           },
           webVersionCache: {
             type: 'remote',
@@ -263,14 +285,35 @@ class HybridInvoiceService {
           console.log('📩 WhatsApp message received (debug):', message.from);
         });
 
-        // Initialize the client with timeout
-        console.log('⏰ Starting WhatsApp initialization (30 second timeout)...');
-        await Promise.race([
-          this.whatsappClient.initialize(),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('WhatsApp initialization timeout')), 30000)
-          )
-        ]);
+        // Initialize the client with enhanced error handling
+        console.log('⏰ Starting WhatsApp initialization (60 second timeout)...');
+        try {
+          await Promise.race([
+            this.whatsappClient.initialize().catch(initError => {
+              console.error('🚨 WhatsApp initialize() error:', initError.message);
+              // Check for specific Puppeteer context errors
+              if (initError.message.includes('Execution context was destroyed') ||
+                  initError.message.includes('navigation')) {
+                throw new Error('Puppeteer context destroyed during initialization - browser navigation issue');
+              }
+              throw initError;
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('WhatsApp initialization timeout after 60 seconds')), 60000)
+            )
+          ]);
+        } catch (contextError) {
+          console.error('💥 Critical initialization error:', contextError.message);
+          
+          // If it's a Puppeteer context error, suggest clean restart
+          if (contextError.message.includes('Execution context') || 
+              contextError.message.includes('navigation')) {
+            console.log('🔧 This appears to be a Puppeteer context issue.');
+            console.log('💡 Suggestion: The browser context was destroyed during navigation.');
+            console.log('🔄 This often happens when WhatsApp Web updates or has connection issues.');
+          }
+          throw contextError;
+        }
         
         // Wait for ready state with timeout based on attempt and QR status
         let readyTimeout;
@@ -1000,6 +1043,7 @@ class HybridInvoiceService {
     // Base case - no more invoices to process
     if (index >= invoices.length) {
       console.log('✅ All invoices processed sequentially');
+      this.runPDFCleanup();
       return;
     }
 
@@ -1026,6 +1070,7 @@ class HybridInvoiceService {
           }, 3000);
         } else {
           console.log('✅ All invoices processed sequentially');
+          this.runPDFCleanup();
         }
       })
       .catch(invoiceError => {
@@ -1044,6 +1089,7 @@ class HybridInvoiceService {
           }, 3000);
         } else {
           console.log('✅ Sequential processing completed (with some errors)');
+          this.runPDFCleanup();
         }
       });
   }
@@ -1730,6 +1776,32 @@ class SAPConnection {
 
       req.end();
     });
+  }
+
+  /**
+   * Run PDF cleanup after processing invoices
+   */
+  async runPDFCleanup() {
+    try {
+      console.log('\n🧹 Running post-processing PDF cleanup...');
+      console.log('==========================================');
+      console.log('⏳ Waiting 5 seconds for SAP status updates to propagate...');
+      
+      // Give SAP a moment to update the status fields
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      const result = await this.pdfCleanupService.performCleanup();
+      
+      if (result) {
+        console.log(`✅ PDF cleanup completed: ${result.filesDeleted} files deleted`);
+      } else {
+        console.log('ℹ️  PDF cleanup completed with no changes');
+      }
+      
+    } catch (error) {
+      console.error('❌ PDF cleanup failed:', error.message);
+      // Don't throw - cleanup failure shouldn't stop the service
+    }
   }
 }
 
