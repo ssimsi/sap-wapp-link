@@ -108,10 +108,6 @@ class HybridInvoiceService {
         this.sendDailyReport().catch(console.error);
       });
       
-      // Start PDF cleanup service (runs daily at 5 AM)
-      console.log('\n🧹 Starting PDF cleanup service...');
-      this.pdfCleanupService.start();
-      
       // Process immediately on start
       setTimeout(() => {
         this.processNewInvoices();
@@ -1636,10 +1632,7 @@ class HybridInvoiceService {
         console.log('📱 WhatsApp service stopped');
       }
       
-      if (this.pdfCleanupService) {
-        this.pdfCleanupService.stop();
-        console.log('🧹 PDF cleanup service stopped');
-      }
+
       
       this.isRunning = false;
       console.log('✅ Hybrid service stopped gracefully');
