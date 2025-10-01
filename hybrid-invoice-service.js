@@ -334,6 +334,14 @@ class HybridInvoiceService {
       } catch (error) {
         console.error(`❌ WhatsApp initialization attempt ${attempt} failed:`, error.message);
         
+        // Check for SingletonLock error and clean up session automatically
+        if (error.message.includes('SingletonLock') || 
+            error.message.includes('Failed to create a ProcessSingleton') ||
+            error.message.includes('Failed to launch the browser process')) {
+          console.log('🔧 Detected browser process conflict - cleaning up session...');
+          await this.cleanupWhatsAppSession();
+        }
+        
         // Clean up failed client
         if (this.whatsappClient) {
           try {
@@ -1051,6 +1059,10 @@ class HybridInvoiceService {
     if (!this.whatsappReady || !this.whatsappClient) {
       console.log(`\n🚫 WhatsApp client lost during sequential processing - STOPPING at invoice ${index + 1}/${invoices.length}`);
       console.log(`📋 Remaining ${invoices.length - index} invoices will be processed when WhatsApp is available`);
+      console.log(`🔄 Attempting automatic WhatsApp recovery...`);
+      
+      // Attempt to recover WhatsApp connection
+      this.attemptWhatsAppRecovery(invoices, index);
       return;
     }
     
@@ -1801,6 +1813,93 @@ class SAPConnection {
     } catch (error) {
       console.error('❌ PDF cleanup failed:', error.message);
       // Don't throw - cleanup failure shouldn't stop the service
+    }
+  }
+
+  /**
+   * Clean up WhatsApp session when browser process conflicts occur
+   */
+  async cleanupWhatsAppSession() {
+    try {
+      console.log('🧹 Cleaning up WhatsApp session due to browser process conflict...');
+      
+      // Kill any remaining Chrome processes using the session
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+      
+      try {
+        await execAsync('pkill -f "session-sap-whatsapp-persistent"');
+        console.log('✅ Killed hanging Chrome processes');
+      } catch (killError) {
+        console.log('ℹ️  No hanging Chrome processes found');
+      }
+      
+      // Remove session directories
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      const sessionDirs = ['.wwebjs_auth', '.wwebjs_cache'];
+      
+      for (const dir of sessionDirs) {
+        try {
+          if (fs.existsSync(dir)) {
+            await fs.promises.rm(dir, { recursive: true, force: true });
+            console.log(`✅ Removed ${dir} directory`);
+          }
+        } catch (rmError) {
+          console.warn(`⚠️ Could not remove ${dir}:`, rmError.message);
+        }
+      }
+      
+      console.log('🎯 Session cleanup completed - fresh QR code will be generated');
+      
+    } catch (error) {
+      console.error('❌ Session cleanup failed:', error.message);
+      console.log('💡 Manual cleanup may be required: pkill -f "session-sap-whatsapp-persistent" && rm -rf .wwebjs_auth .wwebjs_cache');
+    }
+  }
+
+  /**
+   * Attempt to recover WhatsApp connection and resume processing
+   */
+  async attemptWhatsAppRecovery(invoices, currentIndex) {
+    try {
+      console.log('🔄 Starting WhatsApp recovery process...');
+      console.log('⏳ Waiting 10 seconds before recovery attempt...');
+      
+      // Wait a bit for any lingering processes to settle
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      
+      // Clean up the broken session
+      await this.cleanupWhatsAppSession();
+      
+      // Reinitialize WhatsApp
+      console.log('🔄 Reinitializing WhatsApp connection...');
+      const initialized = await this.initializeWhatsApp();
+      
+      if (initialized) {
+        console.log('✅ WhatsApp recovery successful - resuming processing');
+        console.log(`📄 Continuing from invoice ${currentIndex + 1}/${invoices.length}`);
+        
+        // Resume processing from where we left off
+        setTimeout(() => {
+          this.processInvoicesSequentially(invoices, currentIndex);
+        }, 3000); // Give a bit more time after recovery
+      } else {
+        console.log('❌ WhatsApp recovery failed - invoices will remain unprocessed');
+        console.log(`📋 ${invoices.length - currentIndex} invoices could not be completed`);
+        
+        // Still run cleanup for the invoices that were processed
+        this.runPDFCleanup();
+      }
+      
+    } catch (error) {
+      console.error('❌ WhatsApp recovery failed:', error.message);
+      console.log('📋 Manual intervention may be required');
+      
+      // Still run cleanup for processed invoices
+      this.runPDFCleanup();
     }
   }
 }
