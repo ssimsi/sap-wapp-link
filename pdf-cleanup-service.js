@@ -24,6 +24,14 @@ class PDFCleanupService {
   }
 
   /**
+   * Set an external SAP connection (to reuse existing connection from calling service)
+   */
+  setSAPConnection(sapConnection) {
+    this.sapConnection = sapConnection;
+    console.log('🔗 Using external SAP connection for PDF cleanup');
+  }
+
+  /**
    * Start the cleanup service with scheduled runs
    */
   start() {

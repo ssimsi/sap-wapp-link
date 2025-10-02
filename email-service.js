@@ -1257,6 +1257,12 @@ class EmailService {
       // Give SAP a moment to update the status fields
       await new Promise(resolve => setTimeout(resolve, 5000));
       
+      // Pass our SAP connection to the cleanup service to reuse existing login
+      this.pdfCleanupService.setSAPConnection({
+        sessionId: this.sapSessionId,
+        cookies: this.cookies || []
+      });
+      
       const result = await this.pdfCleanupService.performCleanup();
       
       if (result) {
