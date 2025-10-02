@@ -115,7 +115,9 @@ async function renameDocumentPDFs() {
         const documentPDFs = files.filter(file => 
             (
                 file.startsWith('Factura de deudores_') || 
-                file.startsWith('Entrega_')
+                file.startsWith('Factura de deudores - ') ||  // Support hyphen format
+                file.startsWith('Entrega_') ||
+                file.startsWith('Entrega - ')  // Support hyphen format
             ) && file.endsWith('.pdf')
         );
         
